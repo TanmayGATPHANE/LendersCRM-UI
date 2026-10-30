@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Customer } from "../../api/types.ts";
 import Modal from "../Modal.tsx";
+import { toast } from "../Toast.tsx";
 import { inputCls, labelCls, primaryBtnCls, secondaryBtnCls } from "../ui.ts";
 import { addCustomer, updateCustomer } from "../../api/client.ts";
 
@@ -58,6 +59,7 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
       await (editing && customer
         ? updateCustomer(customer.id, values)
         : addCustomer(values));
+      toast(`${editing ? "Customer updated" : "Customer added"} — ${values.name}`, "ok");
       onSaved();
       onClose();
     } catch (err) {

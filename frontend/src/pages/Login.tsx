@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { login, currentUser, setUser } from "../api/client.ts";
 import { inputCls, labelCls, primaryBtnCls } from "../components/ui.ts";
@@ -12,6 +12,10 @@ export default function Login() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  // The browser tab names the page being shown.
+  useEffect(() => { document.title = "AMS — Sign in"; }, []);
 
   // Already signed in? No need to show the form.
   if (currentUser()) return <Navigate to="/" replace />;
@@ -63,14 +67,27 @@ export default function Login() {
           </label>
           <label className={labelCls}>
             Password
-            <input
-              type="password"
-              required
-              value={form.password}
-              onChange={set("password")}
-              placeholder="••••••••"
-              className={`${inputCls} mt-1`}
-            />
+            <span className="relative mt-1 block">
+              <input
+                type={showPw ? "text" : "password"}
+                required
+                value={form.password}
+                onChange={set("password")}
+                placeholder="••••••••"
+                className={`${inputCls} w-full`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((s) => !s)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dim hover:text-slate"
+                aria-label={showPw ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {showPw ? "visibility_off" : "visibility"}
+                </span>
+              </button>
+            </span>
           </label>
 
           {error && <p className="text-sm text-red-600">{error}</p>}

@@ -4,6 +4,7 @@ import AddUserDialog from "../components/dialogs/AddUserDialog.tsx";
 import { fetchUsers, addUser, updateUser } from "../api/client.ts";
 import type { Role, UserItem } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
+import { toast } from "../components/Toast.tsx";
 
 /**
  * Users — admin-only page for managing who can sign in (Admin / Lender /
@@ -17,7 +18,7 @@ export default function Users() {
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    fetchUsers().then(setUsers).catch((e: unknown) => alert((e as Error).message));
+    fetchUsers().then(setUsers).catch((e: unknown) => toast((e as Error).message));
   }, []);
 
   // Case-insensitive filter over name and email.
@@ -31,8 +32,9 @@ export default function Users() {
     try {
       const updated = await updateUser(u.id, { isActive: !u.isActive });
       setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+      toast(updated.isActive ? `Account enabled — ${u.name}` : `Account disabled — ${u.name}`, "ok");
     } catch (err) {
-      alert((err as Error).message);
+      toast((err as Error).message);
     }
   }
 

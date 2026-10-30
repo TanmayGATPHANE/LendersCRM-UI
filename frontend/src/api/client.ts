@@ -14,11 +14,13 @@ import {
   mockLogin, mockFetchCustomers, mockAddCustomer, mockUpdateCustomer,
   mockEnsureCustomer, mockFetchEntries, mockFetchPartials, mockFetchInsights,
   mockAddPartial, mockAddEntry, mockUpdateEntry, mockUpdatePartial,
-  mockUpdateGroupCustomer, mockReleaseGroup, mockFetchUsers, mockAddUser,
-  mockUpdateUser,
+  mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger,
+  mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
+  mockUpdateUser, mockGlobalSearch,
 } from "./mockApi.ts";
 import type {
-  AppUser, Customer, Entry, Insights, Payment, Role, UserItem,
+  AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
+  SearchResults,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -93,6 +95,17 @@ interface DataLayer {
   fetchPartials(): Promise<Payment[]>;
   fetchInsights(tab?: string): Promise<Insights>;
 
+  // The header's global search — one endpoint fanning out across customers,
+  // users and transactions. The server drops anything under 3 characters.
+  fetchGlobalSearch(q: string): Promise<SearchResults>;
+
+  // The Total Cash Available table (§3.5) — every rupee in hand as stored
+  // rows. Manual ± entries are the only rows a user can add or delete;
+  // the lending rows are posted by the backend with the books.
+  fetchCashLedger(): Promise<CashLedgerItem[]>;
+  addManualCash(values: { date: string; amount: number; notes: string }): Promise<CashLedgerItem>;
+  deleteCashEntry(id: number): Promise<void>;
+
   addPartial(groupId: number, values: { date: string; amount: number; notes: string }): Promise<Payment>;
   addEntry(values: {
     customerId?: number; date: string; item: string;
@@ -148,6 +161,18 @@ const api: DataLayer = {
   /** ?tab=all (default) | active | released — the tab shapes the tiles. */
   fetchInsights: (tab) =>
     http<Insights>(`/api/insights${tab && tab !== "All" ? `?tab=${tab.toLowerCase()}` : ""}`),
+
+  fetchGlobalSearch: (q) => http<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
+
+  fetchCashLedger: () => http<CashLedgerItem[]>("/api/cash-ledger"),
+
+  addManualCash: ({ date, amount, notes }) =>
+    http<CashLedgerItem>("/api/cash-ledger", {
+      method: "POST", body: { date, amount: Number(amount), notes },
+    }),
+
+  deleteCashEntry: (id) =>
+    http<void>(`/api/cash-ledger/${id}`, { method: "DELETE" }),
 
   addPartial: (groupId, { date, amount, notes }) =>
     http<Payment>(`/api/groups/${groupId}/payments`, {
@@ -222,6 +247,10 @@ const mock: DataLayer = {
   fetchEntries: mockFetchEntries,
   fetchPartials: mockFetchPartials,
   fetchInsights: mockFetchInsights,
+  fetchGlobalSearch: mockGlobalSearch,
+  fetchCashLedger: mockFetchCashLedger,
+  addManualCash: mockAddManualCash,
+  deleteCashEntry: mockDeleteCashEntry,
   addPartial: mockAddPartial,
   addEntry: mockAddEntry,
   updateEntry: mockUpdateEntry,
@@ -244,6 +273,11 @@ export const ensureCustomer = (name: string, address: string) => impl.ensureCust
 export const fetchEntries = () => impl.fetchEntries();
 export const fetchPartials = () => impl.fetchPartials();
 export const fetchInsights = (tab?: string) => impl.fetchInsights(tab);
+export const fetchGlobalSearch = (q: string) => impl.fetchGlobalSearch(q);
+export const fetchCashLedger = () => impl.fetchCashLedger();
+export const addManualCash =
+  (values: { date: string; amount: number; notes: string }) => impl.addManualCash(values);
+export const deleteCashEntry = (id: number) => impl.deleteCashEntry(id);
 export const addPartial = (groupId: number, values: { date: string; amount: string | number; notes: string }) =>
   impl.addPartial(groupId, { ...values, amount: Number(values.amount) });
 export const addEntry = (values: {

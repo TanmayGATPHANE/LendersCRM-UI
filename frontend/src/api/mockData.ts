@@ -2,7 +2,7 @@
 // from these arrays — the demo switch keeps this file alive alongside the
 // real one (client.ts picks the implementation, nothing else changes).
 
-import type { Entry, Payment } from "./types.ts";
+import type { CashLedgerItem, Entry, Payment } from "./types.ts";
 
 /** Demo customers. Phone is stored raw; formatting happens in the UI.
     activeCount/outstanding are derived by the mock fetch (like the API). */
@@ -145,3 +145,51 @@ export const seedPartials: Payment[] = [
 export const customers: MockCustomer[] = [...seedCustomers];
 export const entries: MockEntry[] = [...seedEntries];
 export const partials: Payment[] = [...seedPartials];
+
+/**
+ * Demo cash ledger (§3.5) — the Total Cash Available table itself.
+ * One negative row per LEND (money out); one row per partial return; TWO
+ * rows per released collateral (principal and interest, dated the release
+ * day; principal = amountReturned − interestCollected); signed manual ±
+ * rows. SUM(amount) is the balance in hand, same rule as the backend's
+ * CashLedger.
+ */
+export const seedCashLedger: CashLedgerItem[] = [
+  // Lends — money going out, one row per lend (referenceId = entry id)
+  { id: 1, date: "2026-08-01", amount: -9500, source: "Lend", groupId: 12, referenceId: 12, notes: null },
+  { id: 2, date: "2026-08-14", amount: -5500, source: "Lend", groupId: 11, referenceId: 11, notes: null },
+  { id: 3, date: "2026-08-30", amount: -5000, source: "Lend", groupId: 1, referenceId: 1, notes: null },
+  { id: 4, date: "2026-09-05", amount: -22000, source: "Lend", groupId: 10, referenceId: 10, notes: null },
+  { id: 5, date: "2026-09-12", amount: -6500, source: "Lend", groupId: 9, referenceId: 9, notes: null },
+  { id: 6, date: "2026-09-30", amount: -30000, source: "Lend", groupId: 8, referenceId: 8, notes: null },
+  { id: 7, date: "2026-10-15", amount: -6200, source: "Lend", groupId: 7, referenceId: 7, notes: null },
+  { id: 8, date: "2026-10-20", amount: -15000, source: "Lend", groupId: 6, referenceId: 6, notes: null },
+  // Partial returns (referenceId = the seed partial's id)
+  { id: 9, date: "2026-10-10", amount: 10000, source: "PartialReturn", groupId: 8, referenceId: 1, notes: "Cash on Dussehra" },
+  { id: 10, date: "2026-10-20", amount: 2500, source: "PartialReturn", groupId: 1, referenceId: 2, notes: "First instalment" },
+  // Releases — the two entries each one posts
+  { id: 11, date: "2026-10-25", amount: 6820, source: "ReleasePrincipal", groupId: 9, referenceId: null, notes: null },
+  { id: 12, date: "2026-10-25", amount: 570, source: "ReleaseInterest", groupId: 9, referenceId: null, notes: null },
+  { id: 13, date: "2026-10-22", amount: 24347, source: "ReleasePrincipal", groupId: 10, referenceId: null, notes: null },
+  { id: 14, date: "2026-10-22", amount: 2933, source: "ReleaseInterest", groupId: 10, referenceId: null, notes: null },
+  { id: 15, date: "2026-09-10", amount: 5500, source: "ReleasePrincipal", groupId: 11, referenceId: null, notes: null },
+  { id: 16, date: "2026-09-10", amount: 0, source: "ReleaseInterest", groupId: 11, referenceId: null, notes: null },
+  { id: 17, date: "2026-10-15", amount: 10650, source: "ReleasePrincipal", groupId: 12, referenceId: null, notes: null },
+  { id: 18, date: "2026-10-15", amount: 1150, source: "ReleaseInterest", groupId: 12, referenceId: null, notes: null },
+  // The remaining active lends went out more recently
+  { id: 19, date: "2026-10-24", amount: -8500, source: "Lend", groupId: 5, referenceId: 5, notes: null },
+  { id: 20, date: "2026-10-26", amount: -25000, source: "Lend", groupId: 4, referenceId: 4, notes: null },
+  { id: 21, date: "2026-10-27", amount: -40000, source: "Lend", groupId: 3, referenceId: 3, notes: null },
+  { id: 22, date: "2026-10-28", amount: -2000, source: "Lend", groupId: 1, referenceId: 2, notes: null },
+  // Manual drawer movements — + in / − out, outside the business
+  { id: 23, date: "2026-10-27", amount: -500, source: "Manual", groupId: null, referenceId: null, notes: "Chai / misc from drawer" },
+];
+
+let nextLedgerId = 24;
+
+export function takeLedgerId(): number {
+  return nextLedgerId++;
+}
+
+/** Mutable working copy — mockPartial/mockRelease/mockManual write here. */
+export const cashLedger: CashLedgerItem[] = [...seedCashLedger];

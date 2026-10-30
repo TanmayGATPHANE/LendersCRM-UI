@@ -5,7 +5,9 @@ export const CURRENCY = "₹";
 
 /** Format a number as currency without decimals (₹12,340). */
 export function money(value: number | string | null | undefined): string {
-  return CURRENCY + Number(value ?? 0).toLocaleString("en-IN");
+  const n = Number(value ?? 0);
+  const sign = n < 0 ? "−" : "";
+  return sign + CURRENCY + Math.abs(n).toLocaleString("en-IN");
 }
 
 /** Format an ISO date string (yyyy-mm-dd) as a short human date. */

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CollateralGroup, Entry } from "../../api/types.ts";
 import type { MenuItem } from "../DotsMenu.tsx";
 import GroupRow from "./GroupRow.tsx";
+import type { FlashHint } from "./FlashTr.tsx";
 
 /**
  * EntryGroupTable — the collateral-groups table (one row per collateral),
@@ -21,9 +22,11 @@ interface Props {
   actions?: (group: CollateralGroup) => MenuItem[];
   /** Edit one individual lend (a sub-lend too) from its ledger row. */
   onEditEntry?: (entry: Entry) => void;
+  /** The last successful save (Dashboard only) — pulses that group's row. */
+  flash?: FlashHint | null;
 }
 
-export default function EntryGroupTable({ groups, actions, onEditEntry }: Props) {
+export default function EntryGroupTable({ groups, actions, onEditEntry, flash }: Props) {
   const [expand, setExpand] = useState<number[]>([]); // groupIds currently expanded
 
   /** Flip one group between expanded and collapsed. */
@@ -44,13 +47,14 @@ export default function EntryGroupTable({ groups, actions, onEditEntry }: Props)
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           <th className={`${th} w-[10%]`}>Date</th>
-          <th className={`${th} w-[17%]`}>Customer Name</th>
-          <th className={`${th} w-[20%]`}>Collateral Item</th>
-          <th className={`${thR} w-[13%]`}>Amount</th>
-          <th className={`${thR} w-[8%]`}>Rate</th>
-          <th className={`${thR} w-[12%]`}>Interest</th>
+          <th className={`${th} w-[16%]`}>Customer Name</th>
+          <th className={`${th} w-[19%]`}>Collateral Item</th>
+          <th className={`${thR} w-[12%]`}>Amount</th>
+          <th className={`${thR} w-[7%]`}>Rate</th>
+          <th className={`${thR} w-[10%]`}>Interest</th>
           <th className={`${th} w-[10%]`}>Status</th>
-          {actions && <th className={`${thR} w-[10%]`}>Actions</th>}
+          <th className={`${th} w-[8%]`}>Released</th>
+          {actions && <th className={`${thR} w-[8%]`}>Actions</th>}
         </tr>
       </thead>
       <tbody className="divide-y divide-line">
@@ -62,12 +66,19 @@ export default function EntryGroupTable({ groups, actions, onEditEntry }: Props)
             onToggle={() => toggle(g.groupId)}
             actions={actions}
             onEditEntry={onEditEntry}
+            flash={flash}
           />
         ))}
         {groups.length === 0 && (
           <tr>
-            <td colSpan={actions ? 8 : 7} className="px-3 py-10 text-center text-sm text-muted">
-              No entries found.
+            <td colSpan={actions ? 9 : 8} className="px-3 py-12">
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <span className="material-symbols-outlined text-[28px] text-dim">inventory_2</span>
+                <span className="text-sm text-slate">No collaterals match</span>
+                <span className="text-xs text-muted">
+                  Nothing matches the search / filters — try clearing them, or add an entry.
+                </span>
+              </div>
             </td>
           </tr>
         )}

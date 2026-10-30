@@ -1,20 +1,31 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 /**
  * Modal — light overlay with a centered card. Renders nothing when `open`
- * is false. Close on scrim click or the ✕ button; pages own what's inside.
- * Pass `wide` for content-heavy dialogs (e.g. the customer History view).
+ * is false. Close on Escape, the scrim click or the ✕ button; pages own
+ * what's inside. Pass `wide` for content-heavy dialogs (e.g. the customer
+ * History view).
  */
 interface Props {
   open: boolean;
   title: string;
-  /** Closes on the ✕ and, via the scrim, on any outside click. */
+  /** Closes on Escape, the ✕ and, via the scrim, on any outside click. */
   onClose: () => void;
   wide?: boolean;
   children: ReactNode;
 }
 
 export default function Modal({ open, title, onClose, wide = false, children }: Props) {
+  // Escape closes — the muscle-memory dismissal every dialog supports.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <div

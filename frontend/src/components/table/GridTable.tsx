@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { CollateralGroup, Customer, EntryStatus } from "../../api/types.ts";
 import StatusBadge from "../StatusBadge.tsx";
+import FlashTr, { type FlashHint } from "./FlashTr.tsx";
 import { money, shortDate } from "../../utils/format.ts";
 import { interestFor } from "../../utils/interest.ts";
 
@@ -83,9 +84,11 @@ interface Props {
   /** Commit cell edits on a payment row. */
   onPaymentUpdate: (id: number, patch: PaymentPatch) => void | Promise<void>;
   onCustomerMove: (groupId: number, customerId: number) => void | Promise<void>;
+  /** The last successful save — pulses every row of that collateral. */
+  flash?: FlashHint | null;
 }
 
-export default function GridTable({ groups, customers, readOnly = false, onUpdate, onPaymentUpdate, onCustomerMove }: Props) {
+export default function GridTable({ groups, customers, readOnly = false, onUpdate, onPaymentUpdate, onCustomerMove, flash }: Props) {
   // Per-column filter text (Excel-style): each column filters its own
   // rows with a contains-match, all filters combine with AND.
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
@@ -225,7 +228,8 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
           const patch = save(r); // commit for THIS row
           const lendOnly = r.editable && r.kind === "lend";
           return (
-            <tr key={r.key} className="hover:bg-tint even:bg-tint/40">
+            <FlashTr key={r.key} flash={flash} groupId={r.groupId}
+              className="hover:bg-tint even:bg-tint/40">
               <EditCell
                 text={shortDate(r.date)} value={r.date} type="date"
                 disabled={!r.editable}
@@ -284,20 +288,26 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
               {/* Interest: computed live (§4.4), read-only */}
               <td className={cellR}>{r.interest}</td>
               <td className={cell}>{r.status ? <StatusBadge status={r.status} /> : "—"}</td>
-              <td className={`${cell} text-muted`}>{shortDate(r.released)}</td>
+              <td className={`${cell} text-muted whitespace-nowrap`}>{shortDate(r.released)}</td>
               <EditCell
                 text={r.notes} value={r.notes} allowEmpty
                 disabled={!r.editable}
                 className={cell}
                 onCommit={(v) => patch({ notes: v })}
               />
-            </tr>
+            </FlashTr>
           );
         })}
         {visible.length === 0 && (
           <tr>
-            <td colSpan={11} className="px-3 py-10 text-center text-sm text-muted">
-              No entries found.
+            <td colSpan={11} className="px-3 py-12">
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <span className="material-symbols-outlined text-[28px] text-dim">grid_on</span>
+                <span className="text-sm text-slate">No entries in the grid</span>
+                <span className="text-xs text-muted">
+                  Nothing matches the search / filters — try clearing them, or add an entry.
+                </span>
+              </div>
             </td>
           </tr>
         )}

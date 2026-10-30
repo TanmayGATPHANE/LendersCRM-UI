@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import type { CollateralGroup } from "../../api/types.ts";
+import type { CollateralGroup, SavedWhere } from "../../api/types.ts";
 import Modal from "../Modal.tsx";
+import { toast } from "../Toast.tsx";
 import { inputCls, labelCls, primaryBtnCls, secondaryBtnCls } from "../ui.ts";
 import { releaseGroup } from "../../api/client.ts";
 import { money, today } from "../../utils/format.ts";
@@ -21,7 +22,8 @@ interface Props {
   /** The collateral being released; null hides the dialog body. */
   group: CollateralGroup | null;
   onClose: () => void;
-  onSaved: () => void | Promise<void>;
+  /** Handed up with the group's id so the page can pulse the released row. */
+  onSaved: (where?: SavedWhere) => void | Promise<void>;
 }
 
 /** Form state. The two number fields arrive from <input> handlers as
@@ -101,7 +103,8 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
         totalCollected: Number(form.totalCollected) || 0,
         notes: form.notes,
       });
-      onSaved();
+      toast(`Collateral released — collected ${money(Number(form.totalCollected))}`, "ok");
+      onSaved({ groupId: group.groupId });
       onClose();
     } catch (err) {
       setError((err as Error).message);

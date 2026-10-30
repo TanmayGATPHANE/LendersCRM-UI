@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import DotsMenu from "../components/DotsMenu.tsx";
 import CustomerDialog from "../components/dialogs/CustomerDialog.tsx";
 import HistoryView from "../components/history/HistoryView.tsx";
@@ -29,6 +30,20 @@ export default function Customers() {
     fetchPartials().then(setPartials);
   }, []);
 
+  // Inbound focus from the header's global search: open the hit customer's
+  // history and clear the box so it is actually visible (the search filter
+  // would otherwise keep showing the whole list's matches).
+  const location = useLocation();
+  const focusApplied = useRef<number | null>(null);
+  useEffect(() => {
+    const fc = (location.state as { focusCustomerId?: number } | null)?.focusCustomerId;
+    if (fc == null || focusApplied.current === fc) return;
+    if (!customers.some((c) => c.id === fc)) return; // wait for the list to load
+    focusApplied.current = fc;
+    setSearch("");
+    setExpanded((prev) => (prev.includes(fc) ? prev : [...prev, fc]));
+  }, [location.state, customers]);
+
   /** Refetch after a customer is created. */
   function refresh(): void {
     fetchCustomers().then(setCustomers);
@@ -41,11 +56,16 @@ export default function Customers() {
     );
   }
 
-  // Case-insensitive filter over name and phone.
+  // Case-insensitive filter over name, phone and address (matches the
+  // backend's ListAsync + the global search's customer fields).
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return customers.filter(
-      (c) => !q || c.name.toLowerCase().includes(q) || (c.phone || "").includes(q)
+      (c) =>
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.phone || "").includes(q) ||
+        c.address.toLowerCase().includes(q)
     );
   }, [customers, search]);
 

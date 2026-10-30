@@ -33,9 +33,12 @@ export function accruedInterest(
   return Math.round(raw);
 }
 
-/** The interest value to display for an entry (frozen value once released). */
+/** The interest value to display for an entry — the BACKEND's figure
+    (entry.interest: frozen InterestCollected once released, live accrual
+    while active), which the plan §4.4 rule makes authoritative. The
+    client-side accrual is only a fallback for entries that lack it
+    (mock/demo data) — recomputing it here is how a ₹713 vs ₹717
+    day-boundary drift once appeared between table and tile. */
 export function interestFor(entry: Entry): number {
-  return entry.status === "Released"
-    ? (entry.interestCollected ?? 0)
-    : accruedInterest(entry);
+  return entry.interest ?? accruedInterest(entry);
 }

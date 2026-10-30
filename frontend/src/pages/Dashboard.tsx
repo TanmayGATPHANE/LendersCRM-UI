@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import AddEntryDialog from "../components/dialogs/AddEntryDialog.tsx";
 import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
 import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
+import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
 import { primaryBtnCls, secondaryBtnCls, inputCls } from "../components/ui.ts";
 import { fetchCustomers, fetchEntries, fetchPartials, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, canEdit } from "../api/client.ts";
-import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment } from "../api/types.ts";
+import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment, SavedWhere } from "../api/types.ts";
 import { buildGroups } from "../utils/grouping.ts";
+import { toast } from "../components/Toast.tsx";
 import { matchesGroup } from "../utils/search.ts";
 
 /** The three status filters shown as a segmented control. */
@@ -54,12 +57,46 @@ export default function Dashboard() {
     refresh();
   }, []);
 
+  // Inbound focus from the header's global search: a lend or partial-return
+  // hit carries its group — switch to the All tab in group view, then
+  // narrow the search box to that group's customer so its rows surface.
+  // Applied once per navigation (guards against every refresh re-applying
+  // it over the user's later edits).
+  const location = useLocation();
+  const focusApplied = useRef<number | null>(null);
+  useEffect(() => {
+    const fg = (location.state as { focusGroupId?: number } | null)?.focusGroupId;
+    if (fg == null || focusApplied.current === fg) return;
+    const owner = entries.find((e) => e.groupId === fg);
+    if (!owner) return; // entries not loaded yet — re-runs when they arrive
+    focusApplied.current = fg;
+    setFilter("All");
+    setView("Groups");
+    setSearch(owner.customerName);
+  }, [location.state, entries]);
+
   // True while the table is being refetched — spins the Refresh button.
   const [refreshing, setRefreshing] = useState(false);
 
   // Headline numbers above the table (Total Amanat / Interest / Cash) —
   // backend-computed for the SELECTED tab.
   const [insights, setInsights] = useState<Insights>({ totalAmanat: 0, interestEarned: 0, cashAvailable: 0 });
+
+  // The save flash: which collateral the last save touched, plus a seq so
+  // the green pulse re-fires even when the same group is saved twice.
+  const [flash, setFlash] = useState<FlashHint | null>(null);
+  const flashSeq = useRef(0);
+
+  /** After a successful save (any entry/sub-lend/edit/partial/release):
+      refresh, then mark the changed row — the pulse stays armed until the
+      refreshed data is back, then fades within ~2.5s. */
+  function onSaved(where?: SavedWhere): void {
+    void refresh();
+    if (where?.groupId == null) return;
+    const seq = ++flashSeq.current;
+    setFlash({ groupId: where.groupId, seq });
+    window.setTimeout(() => setFlash((cur) => (cur?.seq === seq ? null : cur)), 2600);
+  }
 
   // refresh() runs on saves/dialog closes; it must use the filter that is
   // live at that moment, hence the ref.
@@ -123,9 +160,10 @@ export default function Dashboard() {
         ? updatePartial(id, patch) // both patch shapes fit a payment
         // The strings-over-the-wire patch: numbers arrive uncoerced here.
         : updateEntry(id, patch as unknown as Parameters<typeof updateEntry>[1]));
+      toast(kind === "payment" ? "Partial return updated" : "Lend updated", "ok");
       refresh();
     } catch (err) {
-      alert((err as Error).message); // e.g. editing a released lend
+      toast((err as Error).message); // e.g. editing a released lend
     }
   }
 
@@ -134,9 +172,10 @@ export default function Dashboard() {
   async function moveGroup(groupId: number, customerId: number): Promise<void> {
     try {
       await updateGroupCustomer(groupId, customerId);
+      toast("Customer moved", "ok");
       refresh();
     } catch (err) {
-      alert((err as Error).message);
+      toast((err as Error).message);
     }
   }
 
@@ -288,6 +327,7 @@ export default function Dashboard() {
             groups={shown}
             actions={canEdit() ? actionsFor : undefined}
             onEditEntry={setEditing} // edit one lend (row ⋮ Edit, or a sub-lend here)
+            flash={flash}
           />
         </div>
       ) : (
@@ -298,6 +338,7 @@ export default function Dashboard() {
             groups={shown}
             customers={customers}
             readOnly={!canEdit()}
+            flash={flash}
             onUpdate={(id, patch) => patchRow("lend", id, patch)}
             onPaymentUpdate={(id, patch) => patchRow("payment", id, patch)}
             onCustomerMove={moveGroup}
@@ -313,19 +354,19 @@ export default function Dashboard() {
         groups={shown.filter((g) => g.status === "Active")}
         customers={customers}
         onClose={() => { setShowAdd(false); setEditing(null); setSubGroup(null); }}
-        onSaved={refresh}
+        onSaved={onSaved}
       />
       <ReleaseEntryDialog
         open={Boolean(releasing)}
         group={releasing}
         onClose={() => setReleasing(null)}
-        onSaved={refresh}
+        onSaved={onSaved}
       />
       <PartialReturnDialog
         open={Boolean(partlyReturning)}
         group={partlyReturning}
         onClose={() => setPartlyReturning(null)}
-        onSaved={refresh}
+        onSaved={onSaved}
       />
     </main>
   );

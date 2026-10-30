@@ -1,5 +1,7 @@
+import { useEffect, useRef } from "react";
 import type { Insights } from "../api/types.ts";
 import { money } from "../utils/format.ts";
+import { pulse } from "../utils/pulse.ts";
 
 /**
  * InsightsBar — the three headline numbers on top of the Dashboard.
@@ -37,7 +39,7 @@ export default function InsightsBar({ insights, tab = "All" }: Props) {
       [
         "Total Cash Available",
         insights.cashAvailable,
-        "Partial returns received + everything handed over at releases",
+        "Money in hand: what you lent out (−), partial returns, the two release legs and manual ± — straight from the cash table",
       ],
     ],
     Active: [
@@ -52,9 +54,9 @@ export default function InsightsBar({ insights, tab = "All" }: Props) {
         "Accrued live on the active lends so far — freezes when they release",
       ],
       [
-        "Received (Active)",
+        "Cash Out (Active)",
         insights.cashAvailable,
-        "Partial returns received against the still-active collaterals",
+        "Cash the drawer gave out on the active collaterals (lends − partials received) — every rupee of Total Amanat is cash not in hand",
       ],
     ],
     Released: [
@@ -77,12 +79,29 @@ export default function InsightsBar({ insights, tab = "All" }: Props) {
   };
   const items = tiles[tab as "All" | "Active" | "Released"]; // tabs are only ever these three
 
+  // Flash any tile whose number just moved (the save's visible echo).
+  // Compared per tab so switching tabs — a different triple of numbers —
+  // never blinks the tiles; only a save on the books does.
+  const tileRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const prevTiles = useRef<{ tab: string; values: number[] } | null>(null);
+  useEffect(() => {
+    const values = items.map(([, v]) => v);
+    const prev = prevTiles.current;
+    prevTiles.current = { tab, values };
+    if (!prev || prev.tab !== tab) return; // first paint or a tab switch
+    values.forEach((v, i) => {
+      if (v !== prev.values[i]) pulse(tileRefs.current[i]);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `items` derives from `insights`/`tab`, the real signals
+  }, [insights, tab]);
+
   return (
     <div className="grid shrink-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-3">
-      {items.map(([label, value, hint]) => (
+      {items.map(([label, value, hint], i) => (
         <div
           key={label}
           title={hint}
+          ref={(el) => { tileRefs.current[i] = el; }}
           className="rounded-xl border border-line bg-card px-4 py-3 shadow-sm"
         >
           <div className="text-[11px] font-medium uppercase tracking-wider text-muted">

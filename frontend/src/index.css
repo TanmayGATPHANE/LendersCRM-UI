@@ -51,3 +51,5 @@
 .table-scroll {
   scrollbar-gutter: stable;
 }
+/* Tables: numerals align in columns (₹ + digits), so money lines up. */
+table td { font-variant-numeric: tabular-nums; }

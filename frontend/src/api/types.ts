@@ -45,6 +45,28 @@ export interface Payment {
   notes: string | null;
 }
 
+/** GET /api/cash-ledger — one row of the Total Cash Available table (§3.5):
+    every rupee moving over the counter is a STORED row. A lend books one
+    negative row (money out), a release posts two (principal + interest,
+    dated the release day), a partial return posts one, and a manual +/−
+    drawer movement posts one signed row. SUM(Amount) = Total Cash
+    Available — no page derives it. */
+export type CashLedgerSource =
+  | "Lend" | "PartialReturn" | "ReleasePrincipal" | "ReleaseInterest" | "Manual";
+
+export interface CashLedgerItem {
+  id: number;
+  date: string;
+  /** Signed for Manual (+ into the drawer / − out); positive for lending rows. */
+  amount: number;
+  source: CashLedgerSource;
+  /** Links lending rows back to their collateral group; null for Manual. */
+  groupId: number | null;
+  /** PartialReturn rows: the payment record they were booked from. */
+  referenceId: number | null;
+  notes: string | null;
+}
+
 /** One lend as every table/dialog expects it (mirrors EntryItem). */
 export interface Entry {
   id: number;
@@ -73,6 +95,35 @@ export interface Insights {
   totalAmanat: number;
   interestEarned: number;
   cashAvailable: number;
+}
+
+/** Which collateral a successful save landed on — dialogs hand this up to
+    the page (through onSaved) so it can pulse the changed row(s) green. */
+export interface SavedWhere {
+  groupId?: number;
+}
+
+// ---- global search (the header box) ----
+
+/** One hit of the header's global search. type: "customer" | "user" |
+    "lend" | "payment"; amount rides on transaction hits; groupId is the
+    jump-target (the collateral group) on lending rows. */
+export type SearchHitType = "customer" | "user" | "lend" | "payment";
+
+export interface SearchHit {
+  id: number;
+  type: SearchHitType;
+  title: string;
+  subtitle: string;
+  amount: number | null;
+  groupId: number | null;
+}
+
+/** Three sections for the dropdown — users is filled only for Admin. */
+export interface SearchResults {
+  customers: SearchHit[];
+  users: SearchHit[];
+  transactions: SearchHit[];
 }
 
 /** One collapsed collateral group (utils/grouping.ts buildGroups). */

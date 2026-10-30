@@ -1,5 +1,18 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { currentUser, setUser } from "../api/client.ts";
+import GlobalSearch from "./GlobalSearch.tsx";
+import UserMenu from "./UserMenu.tsx";
+import Bell from "./Bell.tsx";
+import Toaster from "./Toast.tsx";
+
+/** The browser tab names the page being shown. */
+const TITLES: Record<string, string> = {
+  "/": "Dashboard",
+  "/customers": "Customers",
+  "/cash": "Cash",
+  "/users": "Users",
+};
 
 /**
  * Shell for every authenticated page: fixed sidebar with the three nav
@@ -9,7 +22,12 @@ import { currentUser, setUser } from "../api/client.ts";
  */
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = currentUser();
+
+  useEffect(() => {
+    document.title = `AMS — ${TITLES[location.pathname] ?? "AMS"}`;
+  }, [location.pathname]);
 
   // Sign out: clear local storage and bounce to the login screen.
   function signOut() {
@@ -30,7 +48,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="flex w-56 shrink-0 flex-col justify-between bg-card shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
         <div>
-          <div className="flex h-16 items-center gap-2.5 px-4 border-b border-line">
+          <div className="flex h-12 items-center gap-2.5 px-4 border-b border-line">
             {/* Logo tile — the app's mark, reused in favicon.svg */}
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-on-primary">
               <span className="text-base font-semibold">₹</span>
@@ -71,17 +89,21 @@ export default function Layout() {
 
       {/* Main region */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-end gap-4 border-b border-line bg-card px-6">
-          <span className="text-sm text-muted">{user?.email}</span>
-          <button
-            onClick={signOut}
-            className="flex items-center gap-1 rounded-lg border border-line bg-tint px-3 py-1.5 text-sm text-slate hover:bg-tint-hover"
-          >
-            <span className="material-symbols-outlined text-[16px]">logout</span>
-            Sign out
-          </button>
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-card px-5">
+          {/* The reference header: search left (with the kbd hint), then a
+              clear middle, then the red-dot bell and the account chip. */}
+          <GlobalSearch />
+          <div className="flex-1" />
+          <Bell />
+          <UserMenu
+            name={user?.name ?? ""}
+            email={user?.email ?? ""}
+            role={user?.role}
+            onSignOut={signOut}
+          />
         </header>
         <Outlet />
+        <Toaster />
       </div>
     </div>
   );

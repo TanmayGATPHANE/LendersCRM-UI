@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Role } from "../../api/types.ts";
 import Modal from "../Modal.tsx";
+import { toast } from "../Toast.tsx";
 import { inputCls, labelCls, primaryBtnCls, secondaryBtnCls } from "../ui.ts";
 
 /**
@@ -55,6 +56,7 @@ export default function AddUserDialog({ open, emails, onClose, onSaved }: Props)
       return setError("That email is already used");
     try {
       await onSaved(form);
+      toast(`User added — ${form.name}`, "ok");
       onClose();
     } catch (err) {
       setError((err as Error).message); // e.g. "A user with this email already exists"

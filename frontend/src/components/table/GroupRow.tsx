@@ -2,6 +2,7 @@ import type { CollateralGroup, Entry } from "../../api/types.ts";
 import type { MenuItem } from "../DotsMenu.tsx";
 import DotsMenu from "../DotsMenu.tsx";
 import StatusBadge from "../StatusBadge.tsx";
+import FlashTr, { type FlashHint } from "./FlashTr.tsx";
 import LedgerTable from "./LedgerTable.tsx";
 import { money, shortDate } from "../../utils/format.ts";
 import { groupRateText, groupInterest } from "../../utils/grouping.ts";
@@ -23,14 +24,23 @@ interface Props {
   actions?: (group: CollateralGroup) => MenuItem[];
   /** Edit one individual lend from the group's ledger. */
   onEditEntry?: (entry: Entry) => void;
+  /** The last successful save — pulses this row when it names this group. */
+  flash?: FlashHint | null;
 }
 
-export default function GroupRow({ group: g, expanded, onToggle, actions, onEditEntry }: Props) {
+export default function GroupRow({ group: g, expanded, onToggle, actions, onEditEntry, flash }: Props) {
   const td = "px-3 py-2";
   return (
     <>
-      <tr onClick={onToggle} className="cursor-pointer hover:bg-tint">
-        <td className={`${td} text-xs text-slate`}>
+      {/* Headline row: FlashTr pulses it green right after a save that
+          touched this collateral (the "what just changed" marker). */}
+      <FlashTr
+        flash={flash}
+        groupId={g.groupId}
+        onClick={onToggle}
+        className="cursor-pointer hover:bg-tint"
+      >
+        <td className={`${td} whitespace-nowrap text-xs text-slate`}>
           <span className="inline-flex items-center gap-1">
             {shortDate(g.date)}
             <span className={`material-symbols-outlined text-[16px] text-dim transition-transform ${expanded ? "rotate-180" : ""}`}>
@@ -71,14 +81,18 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, onEdit
           {g.subs.every((s) => !s.rate) && g.status === "Active" ? "—" : money(groupInterest(g))}
         </td>
         <td className={td}><StatusBadge status={g.status} /></td>
+        {/* When released: the day the collateral came back (§3.1). */}
+        <td className={`${td} whitespace-nowrap text-xs text-slate`}>
+          {g.status === "Released" ? shortDate(g.primary.releasedDate) : "—"}
+        </td>
         <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
           {actions && <DotsMenu items={actions(g)} />}
         </td>
-      </tr>
+      </FlashTr>
 
       {expanded && (
         <tr className="bg-tint/60">
-          <td colSpan={actions ? 8 : 7} className="px-4 py-3">
+          <td colSpan={actions ? 9 : 8} className="px-4 py-3">
             {/* Fixed widths + its own horizontal scroller: the ledger can
                 be as long as history demands without ever pushing or
                 shifting the columns of the table around it. */}

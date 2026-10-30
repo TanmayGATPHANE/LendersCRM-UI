@@ -1,5 +1,19 @@
-# Installed dependencies — rebuilt with `npm install`
-node_modules/
+# AMS frontend — build output, dependencies, and machine-local state are
+# never committed; only src/ + config travel with the repo.
 
-# Build output
-dist/
+node_modules/
+dist/            # `npm run build` output
+*.tsbuildinfo    # tsc incremental-cache
+
+# local env files (may hold VITE_API_URL or tokens)
+.env.local
+.env.*.local
+
+# editors / OS noise
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+.vercel
+.env*.local

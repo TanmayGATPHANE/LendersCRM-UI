@@ -1,7 +1,8 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import type { CollateralGroup, Customer, Entry, EntryForm } from "../../api/types.ts";
+import type { CollateralGroup, Customer, Entry, EntryForm, SavedWhere } from "../../api/types.ts";
 import Modal from "../Modal.tsx";
 import EntryFields from "./EntryFields.tsx";
+import { toast } from "../Toast.tsx";
 import { inputCls, labelCls, primaryBtnCls, secondaryBtnCls } from "../ui.ts";
 import { addEntry, updateEntry, ensureCustomer } from "../../api/client.ts";
 import { money, today } from "../../utils/format.ts";
@@ -34,7 +35,9 @@ interface Props {
   /** Customers on file — feeds the type-ahead suggestions. */
   customers?: Customer[];
   onClose: () => void;
-  onSaved: () => void | Promise<void>;
+  /** Where the save landed (groupId) — lets the page pulse the changed
+      row; called with no argument when the page has nothing to highlight. */
+  onSaved: (where?: SavedWhere) => void | Promise<void>;
 }
 
 export default function AddEntryDialog({ open, entry, group, groups = [], customers = [], onClose, onSaved }: Props) {
@@ -109,31 +112,36 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
     if (!(Number(form.amount) > 0)) return setError("Amount must be greater than 0");
     try {
       if (editing && entry) {
-        await updateEntry(entry.id, {
+        const saved = await updateEntry(entry.id, {
           customerId: entry.customerId,
           item: entry.item,
           ...payload(),
         });
+        toast(`Entry updated — ${money(Number(form.amount))}`, "ok");
+        onSaved({ groupId: saved.groupId });
       } else if (subOf && group) {
         // Sub-lend: join that collateral group (customer + item from it).
-        await addEntry({
+        const saved = await addEntry({
           groupId: group.groupId,
           customerId: group.customerId,
           item: group.item,
           ...payload(),
         });
+        toast(`Sub-lend recorded — ${group.customerName}, ${money(Number(form.amount))}`, "ok");
+        onSaved({ groupId: saved.groupId });
       } else {
         // Fresh entry: the typed name, find-or-create with the address.
         const name = form.customerName.trim();
         if (!name) return setError("Enter the customer name");
         const c = await ensureCustomer(name, form.customerAddress.trim());
-        await addEntry({
+        const saved = await addEntry({
           customerId: c.id,
           item: form.item.trim(),
           ...payload(),
         });
+        toast(`Entry recorded — ${name}, ${money(Number(form.amount))}`, "ok");
+        onSaved({ groupId: saved.groupId });
       }
-      onSaved();
       onClose();
     } catch (err) {
       setError((err as Error).message); // the API's `{ message }` text
