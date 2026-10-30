@@ -1,0 +1,53 @@
+/* Entry stylesheet. Tailwind v4: `@theme` below defines every custom
+   design token as a utility class (e.g. --color-primary -> bg-primary). */
+@import "tailwindcss";
+
+@theme {
+  /* Fonts — Geist only, everywhere (headings, tables, numbers, inputs).
+     The mono token still exists because table cells use font-mono for
+     alignment, but it now points at the same family so nothing on the
+     screen ever switches typeface. */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist", ui-sans-serif, system-ui, sans-serif;
+
+  /* Core surfaces — cool titanium-like panels from the Stitch theme */
+  --color-surface: #f8f9ff; /* app background */
+  --color-card: #ffffff; /* cards, tables, dialogs */
+  --color-tint: #eff4ff; /* input wells, hover fills */
+  --color-tint-hover: #dce9ff; /* stronger hover fill */
+  --color-line: #e2e8f0; /* hairline borders */
+
+  /* Ink — primary text and muted text */
+  --color-ink: #0b1c30;
+  --color-slate: #3f484c;
+  --color-muted: #64748b;
+  --color-dim: #94a3b8;
+
+  /* Primary teal (buttons, active nav, focus rings) */
+  --color-primary: #0e7490;
+  --color-primary-hover: #0c647c;
+  --color-primary-press: #084c5e;
+  --color-on-primary: #ffffff;
+
+  /* Status badges */
+  --color-badge-ok: #15803d;
+  --color-badge-ok-bg: #dcfce7; /* Active */
+  --color-badge-off: #475569;
+  --color-badge-off-bg: #f1f5f9; /* Released */
+}
+
+/* Make Material Symbols line up with text they sit next to. */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  display: inline-block;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Scroll containers that sit under the page (table bodies, modal bodies).
+   Reserving the scrollbar gutter means a scrollbar appearing/disappearing
+   can never pull the content sideways — expanding a row keeps the table
+   and the page exactly where they were. */
+.table-scroll {
+  scrollbar-gutter: stable;
+}

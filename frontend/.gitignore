@@ -1,0 +1,5 @@
+# Installed dependencies — rebuilt with `npm install`
+node_modules/
+
+# Build output
+dist/
