@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { ghostIconBtnCls } from "./ui.ts";
 
 /**
  * Modal — light overlay with a centered card. Renders nothing when `open`
@@ -29,11 +30,11 @@ export default function Modal({ open, title, onClose, wide = false, children }: 
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]"
+      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className={`w-full rounded-2xl bg-card shadow-2xl ring-1 ring-line ${wide ? "max-w-3xl" : "max-w-xl"}`}
+        className={`anim-pop-in w-full rounded-2xl bg-card shadow-2xl ring-1 ring-line ${wide ? "max-w-3xl" : "max-w-xl"}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -41,10 +42,10 @@ export default function Modal({ open, title, onClose, wide = false, children }: 
           <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-muted hover:bg-tint-hover hover:text-ink"
+            className={ghostIconBtnCls}
             aria-label="Close"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <i className="ph ph-x text-xl" aria-hidden="true" />
           </button>
         </div>
         {/* Body — table-scroll keeps the gutter so content doesn't shift

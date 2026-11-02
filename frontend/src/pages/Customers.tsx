@@ -72,10 +72,10 @@ export default function Customers() {
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Toolbar: search on the left, Add Customer on the right */}
-      <div className="flex shrink-0 items-center gap-3 pb-3">
-        <div className="max-w-xs flex-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
+        <div className="min-w-44 max-w-xs flex-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -86,16 +86,69 @@ export default function Customers() {
         <div className="flex-1" />
         {canEdit() && (
           <button onClick={() => setAdding(true)} className={primaryBtnCls}>
-            <span className="material-symbols-outlined text-[18px]">add</span>
+            <i className="ph ph-plus text-lg" aria-hidden="true" />
             Add Customer
           </button>
         )}
       </div>
 
-      {/* Customer table — scrollable like the entries table; the history
-          opens as an inline detail row, the table body is the scroller */}
-      <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
-        <table className="table-fixed w-full min-w-[560px] text-sm">
+      {/* Customer records — cards on phones, the table from md up */}
+      <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+        {/* Mobile: one card per customer, history expands inline */}
+        <div className="stagger space-y-2 p-3 md:hidden">
+          {shown.map((c) => (
+            <div key={c.id} className="rounded-xl border border-line p-3 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  onClick={() => toggle(c.id)}
+                  className="min-w-0 flex-1 text-left"
+                  title="Show track record"
+                >
+                  <span className="block truncate text-sm font-semibold text-ink">
+                    {c.name}
+                    {c.address && (
+                      <span className="ml-1.5 text-xs font-normal text-muted">· {c.address}</span>
+                    )}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-1 text-xs text-slate">
+                    {c.phone ? `+91 ${c.phone}` : "No phone"}
+                    <i
+                      className={`ph ph-caret-down text-sm text-dim transition-transform duration-300 ease-brand ${
+                        expanded.includes(c.id) ? "rotate-180" : ""
+                      }`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
+                <span className="shrink-0 text-right">
+                  <span className="block text-sm font-semibold tabular-nums text-ink">{c.activeCount}</span>
+                  <span className="block text-xs text-muted">active</span>
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-muted">Tap the name to see their history</span>
+                <DotsMenu
+                  items={[
+                    { label: "History", onClick: () => toggle(c.id) },
+                    ...(canEdit() ? [{ label: "Edit", onClick: () => setEditing(c) }] : []),
+                  ]}
+                />
+              </div>
+              {expanded.includes(c.id) && (
+                <div className="mt-3 rounded-lg bg-tint/60 p-2.5">
+                  <HistoryView customer={c} entries={entries} partials={partials} />
+                </div>
+              )}
+            </div>
+          ))}
+          {shown.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted">
+              {customers.length === 0 ? "Add your first customer." : "No customers found."}
+            </p>
+          )}
+        </div>
+
+        <table className="hidden table-fixed w-full min-w-[560px] text-sm md:table">
           <thead className="sticky top-0 z-10 bg-card border-b border-line">
             <tr>
               <th className={`${th} w-[45%]`}>Name</th>
@@ -121,15 +174,15 @@ export default function Customers() {
                       <span className="truncate">
                         {c.name}
                         {c.address && (
-                          <span className="text-[11px] text-muted"> · {c.address}</span>
+                          <span className="text-xs text-muted"> · {c.address}</span>
                         )}
                       </span>
                       <span
-                        className={`material-symbols-outlined shrink-0 text-[16px] text-dim transition-transform ${
+                        className={`shrink-0 text-dim transition-transform duration-300 ease-brand ${
                           expanded.includes(c.id) ? "rotate-180" : ""
                         }`}
                       >
-                        expand_more
+                        <i className="ph ph-caret-down text-base" aria-hidden="true" />
                       </span>
                     </button>
                   </td>
@@ -159,7 +212,7 @@ export default function Customers() {
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-10 text-center text-sm text-muted">
+                <td colSpan={4} className="hidden px-3 py-10 text-center text-sm text-muted md:table-cell">
                   {customers.length === 0 ? "Add your first customer." : "No customers found."}
                 </td>
               </tr>

@@ -34,18 +34,14 @@ export default function Toaster() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-[0_8px_30px_rgba(11,28,48,0.14)] ${
+          className={`anim-toast-in pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-[0_8px_30px_rgba(11,28,48,0.14)] ${
             t.kind === "ok"
               ? "border-line bg-card text-ink"
               : "border-red-200 bg-red-50 text-red-700"
           }`}
           role={t.kind === "ok" ? "status" : "alert"}
         >
-          <span className={`material-symbols-outlined text-[18px] ${
-            t.kind === "ok" ? "text-badge-ok" : "text-red-600"
-          }`}>
-            {t.kind === "ok" ? "check_circle" : "error"}
-          </span>
+          <i className={`ph ${t.kind === "ok" ? "ph-check-circle text-badge-ok" : "ph-x-circle text-red-600"} text-lg`} aria-hidden="true" />
           <span className="min-w-0 flex-1">{t.msg}</span>
         </div>
       ))}

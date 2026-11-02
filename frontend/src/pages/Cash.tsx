@@ -108,10 +108,10 @@ export default function Cash() {
   const thR = `${th} text-right`;
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Toolbar: search on the left, running total on the right */}
-      <div className="flex shrink-0 items-center gap-3 pb-3">
-        <div className="max-w-xs flex-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
+        <div className="min-w-44 max-w-xs flex-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -132,8 +132,63 @@ export default function Cash() {
       </div>
 
       {/* The ledger — scrollable like the other tables */}
-      <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
-        <table className="w-full table-fixed min-w-[640px] text-sm">
+      <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+        {/* Mobile: one card per money movement */}
+        <div className="stagger space-y-2 p-3 md:hidden">
+          {shown.map((r) => {
+            const manual = r.row.source === "Manual";
+            const signed = manual || r.row.source === "Lend";
+            return (
+              <div key={r.row.id} className="rounded-xl border border-line p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                        r.row.source === "ReleaseInterest" ? "bg-tint text-primary" : "bg-tint text-slate"
+                      }`}
+                    >
+                      {r.label}
+                    </span>
+                    <span className="mt-0.5 block truncate text-sm font-semibold text-ink">{r.who}</span>
+                    <span className="mt-0.5 block text-xs text-muted">{shortDate(r.date)}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        signed ? (r.amount > 0 ? "text-green-700" : "text-red-600") : "text-ink"
+                      }`}
+                    >
+                      {signed ? (r.amount > 0 ? "+" : "−") : ""}{money(Math.abs(r.amount))}
+                    </span>
+                    {manual && canEdit() && (
+                      <button
+                        onClick={() => removeEntry(r.row.id, r.notes)}
+                        title="Delete this cash entry"
+                        className="cursor-pointer text-dim hover:text-red-600
+                                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+                                   transition-colors duration-300 ease-brand"
+                      >
+                        <i className="ph ph-trash text-lg" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {r.notes && <p className="mt-2 truncate text-xs text-slate">{r.notes}</p>}
+              </div>
+            );
+          })}
+          {shown.length === 0 && (
+            <div className="flex flex-col items-center gap-1.5 py-12 text-center">
+              <i className="ph ph-coins text-2xl text-dim" aria-hidden="true" />
+              <span className="text-sm text-slate">No cash entries</span>
+              <span className="text-xs text-muted">
+                Rows appear as money moves over the counter — lends go out, returns come in.
+              </span>
+            </div>
+          )}
+        </div>
+
+        <table className="hidden w-full table-fixed min-w-[640px] text-sm md:table">
           <thead className="sticky top-0 z-10 bg-card border-b border-line">
             <tr>
               <th className={`${th} w-[13%]`}>Date</th>
@@ -156,7 +211,7 @@ export default function Cash() {
                     {/* Neutral chip for the row kind (like the role/status
                         badges) — red is reserved for the amount leaving. */}
                     <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                         r.row.source === "ReleaseInterest"
                           ? "bg-tint text-primary"
                           : "bg-tint text-slate"
@@ -181,9 +236,11 @@ export default function Cash() {
                         <button
                           onClick={() => removeEntry(r.row.id, r.notes)}
                           title="Delete this cash entry"
-                          className="material-symbols-outlined cursor-pointer text-[18px] text-dim hover:text-red-600"
+                          className="cursor-pointer text-dim hover:text-red-600
+                                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+                                     transition-colors duration-300 ease-brand"
                         >
-                          delete
+                          <i className="ph ph-trash text-lg" aria-hidden="true" />
                         </button>
                       )}
                     </td>
@@ -192,10 +249,10 @@ export default function Cash() {
               );
             })}
             {shown.length === 0 && (
-              <tr>
+              <tr className="hidden md:table-row">
                 <td colSpan={canEdit() ? 5 : 4} className="px-3 py-12">
                   <div className="flex flex-col items-center gap-1.5 text-center">
-                    <span className="material-symbols-outlined text-[28px] text-dim">payments</span>
+                    <i className="ph ph-coins text-2xl text-dim" aria-hidden="true" />
                     <span className="text-sm text-slate">No cash entries</span>
                     <span className="text-xs text-muted">
                       Rows appear as money moves over the counter — lends go out, returns come in.

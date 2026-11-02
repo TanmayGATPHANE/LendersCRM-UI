@@ -14,12 +14,12 @@ import { money } from "../utils/format.ts";
 /** Server-side mirror — the API also gates the query length. */
 const MIN_CHARS = 3;
 
-/** Per hit type: the icon glyph + a plain section label. */
+/** Per hit type: the Phosphor icon name + a plain section label. */
 const HIT_META: Record<SearchHitType, { icon: string; section: string }> = {
-  customer: { icon: "person", section: "Customers" },
-  user: { icon: "badge", section: "Users" },
-  lend: { icon: "inventory_2", section: "Transactions" },
-  payment: { icon: "payments", section: "Transactions" },
+  customer: { icon: "user", section: "Customers" },
+  user: { icon: "identification-card", section: "Users" },
+  lend: { icon: "package", section: "Transactions" },
+  payment: { icon: "coins", section: "Transactions" },
 };
 
 export default function GlobalSearch() {
@@ -126,7 +126,7 @@ export default function GlobalSearch() {
   return (
     <div ref={boxRef} className="relative w-full max-w-md">
       <div className="flex items-center gap-2 rounded-lg border border-line bg-tint px-2.5 py-1.5 focus-within:border-primary focus-within:bg-card">
-        <span className="material-symbols-outlined text-[16px] text-muted">search</span>
+        <i className="ph ph-magnifying-glass text-base text-muted" aria-hidden="true" />
         <input
           ref={inputRef}
           value={q}
@@ -140,37 +140,39 @@ export default function GlobalSearch() {
         {q && (
           <button
             onClick={() => { setQ(""); inputRef.current?.focus(); }}
-            className="text-dim hover:text-slate"
+            className={`text-dim hover:text-slate
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+                        transition-colors duration-300 ease-brand`}
             aria-label="Clear search"
           >
-            <span className="material-symbols-outlined text-[16px]">close</span>
+            <i className="ph ph-x text-base" aria-hidden="true" />
           </button>
         )}
-        <kbd className="hidden rounded border border-line bg-card px-1 py-px text-[9px] leading-tight text-dim lg:block">
+        <kbd className="hidden whitespace-nowrap rounded border border-line bg-card px-1 py-px text-xs leading-tight text-dim lg:block">
           Ctrl K
         </kbd>
       </div>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-[70vh] overflow-y-auto rounded-xl border border-line bg-card py-1.5 shadow-[0_8px_30px_rgba(11,28,48,0.14)]">
+        <div className="anim-pop-in absolute left-0 right-0 top-full z-50 mt-2 max-h-[70vh] origin-top overflow-y-auto rounded-xl border border-line bg-card py-1.5 shadow-[0_8px_30px_rgba(11,28,48,0.14)]">
           {rows.map(({ hit, i, section, showLabel }) => (
             <div key={`${hit.type}-${hit.id}`}>
               {showLabel && (
-                <div className="px-3 pb-1 pt-2.5 text-[10px] font-medium uppercase tracking-wider text-dim">
+                <div className="px-3 pb-1 pt-2.5 text-xs font-medium uppercase tracking-wider text-dim">
                   {section}
                 </div>
               )}
               <button
                 onMouseDown={(e) => { e.preventDefault(); pick(hit); }}
                 onMouseEnter={() => setActive(i)}
-                className={`flex w-full items-center gap-3 px-3 py-2 text-left ${
+                className={`flex w-full items-center gap-3 px-3 py-2 text-left
+                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
+                            focus-visible:ring-primary/40 ${
                   i === active ? "bg-tint" : ""
                 }`}
               >
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-tint text-slate">
-                  <span className="material-symbols-outlined text-[18px]">
-                    {HIT_META[hit.type].icon}
-                  </span>
+                  <i className={`ph ph-${HIT_META[hit.type].icon} text-lg`} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-ink">{hit.title}</span>
@@ -181,9 +183,7 @@ export default function GlobalSearch() {
                 {hit.amount != null && (
                   <span className="shrink-0 text-sm tabular-nums text-slate">{money(hit.amount)}</span>
                 )}
-                <span className="material-symbols-outlined text-[16px] text-dim">
-                  chevron_right
-                </span>
+                <i className="ph ph-caret-right text-base text-dim" aria-hidden="true" />
               </button>
             </div>
           ))}

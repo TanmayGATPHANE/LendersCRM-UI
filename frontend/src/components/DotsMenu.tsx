@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ghostIconBtnCls } from "./ui.ts";
 
 /** One row action of the ⋮ menu. `danger` tints the label red (Release),
     `hidden` filters an item out entirely (e.g. Release on released rows). */
@@ -43,14 +44,14 @@ export default function DotsMenu({ items }: Props) {
     <div ref={ref} className="relative inline-block">
       <button
         onClick={() => setOpen(!open)}
-        className="rounded-md p-1 text-muted hover:bg-tint-hover hover:text-ink"
+        className={ghostIconBtnCls}
         aria-label="Row actions"
       >
-        <span className="material-symbols-outlined text-[18px]">more_vert</span>
+        <i className="ph ph-dots-three-vertical text-lg" aria-hidden="true" />
       </button>
       {open && (
         <div
-          className="absolute right-0 z-30 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-card shadow-md
+          className="anim-pop-in absolute right-0 z-30 mt-1 w-32 origin-top-right overflow-hidden rounded-lg border border-line bg-card shadow-md
                      divide-y divide-line"
         >
           {visible.map((item) => (
@@ -60,7 +61,9 @@ export default function DotsMenu({ items }: Props) {
                 setOpen(false);
                 item.onClick();
               }}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-tint ${
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-tint
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
+                          focus-visible:ring-primary/40 ${
                 item.danger ? "text-red-600" : "text-slate"
               }`}
             >

@@ -81,17 +81,19 @@ export default function Bell() {
     <div ref={ref} className="relative">
       <button
         onClick={() => notices.length > 0 && setOpen((o) => !o)}
-        className="grid h-8 w-8 place-items-center rounded-full text-slate hover:bg-tint"
+        className={`relative grid h-8 w-8 place-items-center rounded-full text-slate hover:bg-tint
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+                    transition-colors duration-300 ease-brand`}
         aria-label={`Notifications${notices.length ? ` (${notices.length})` : ""}`}
       >
-        <span className="material-symbols-outlined text-[20px]">notifications</span>
+        <i className="ph ph-bell text-xl" aria-hidden="true" />
         {notices.length > 0 && (
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-card" />
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-line bg-card py-1.5 shadow-[0_8px_30px_rgba(11,28,48,0.14)]">
-          <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-dim">
+        <div className="anim-pop-in absolute right-0 top-full z-50 mt-2 w-80 origin-top-right rounded-xl border border-line bg-card py-1.5 shadow-[0_8px_30px_rgba(11,28,48,0.14)]">
+          <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-dim">
             Needs attention
           </div>
           {notices.map((n) => (
@@ -102,10 +104,12 @@ export default function Bell() {
                 setOpen(false);
                 navigate("/", { state: { focusGroupId: n.groupId } });
               }}
-              className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-tint"
+              className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-tint
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
+                          focus-visible:ring-primary/40`}
             >
               <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-tint text-slate">
-                <span className="material-symbols-outlined text-[16px]">schedule</span>
+                <i className="ph ph-clock text-base" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-ink">{n.customerName} — {n.item}</span>

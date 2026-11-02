@@ -7,7 +7,7 @@ import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
-import { primaryBtnCls, secondaryBtnCls, inputCls } from "../components/ui.ts";
+import { primaryBtnCls, secondaryBtnCls, inputCls, selectCls } from "../components/ui.ts";
 import { fetchCustomers, fetchEntries, fetchPartials, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, canEdit } from "../api/client.ts";
 import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment, SavedWhere } from "../api/types.ts";
 import { buildGroups } from "../utils/grouping.ts";
@@ -222,18 +222,21 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Headline numbers — refreshed with every change to the books */}
       <InsightsBar insights={insights} tab={filter} />
 
-      {/* Toolbar: filter + view + search on the left, actions on the right */}
-      <div className="flex shrink-0 items-center gap-3 pb-3">
+      {/* Toolbar: filter + view + search on the left, actions on the right.
+          Wraps instead of squeezing when the window is narrow. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
+        {/* Toolbar: focus rings on every control (keyboard parity) */}
         <div className="flex rounded-lg border border-line bg-card p-0.5">
           {FILTERS.map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors duration-300 ease-brand
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                 filter === f ? "bg-primary text-on-primary" : "text-slate hover:bg-tint-hover"
               }`}
             >
@@ -249,19 +252,18 @@ export default function Dashboard() {
               key={v}
               onClick={() => setView(v)}
               title={v === "Groups" ? "One row per collateral" : "Flat spreadsheet grid, one row per lend"}
-              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors duration-300 ease-brand
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                 view === v ? "bg-primary text-on-primary" : "text-slate hover:bg-tint-hover"
               }`}
             >
-              <span className="material-symbols-outlined text-[16px]">
-                {v === "Groups" ? "segment" : "grid_on"}
-              </span>
+              <i className={`ph ${v === "Groups" ? "ph-rows" : "ph-table"} text-base`} aria-hidden="true" />
               {v}
             </button>
           ))}
         </div>
 
-        <div className="max-w-xs flex-1">
+        <div className="min-w-44 max-w-xs flex-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -277,7 +279,7 @@ export default function Dashboard() {
           value={month}
           onChange={(e) => setMonth(e.target.value)}
           title="Filter by month of the lend"
-          className="rounded-lg border border-line bg-tint px-2.5 py-2 text-sm text-slate hover:bg-tint-hover focus:outline-none"
+          className={selectCls}
         >
           <option value="all">All months</option>
           {MONTHS.map((m, i) => (
@@ -288,7 +290,7 @@ export default function Dashboard() {
           value={year}
           onChange={(e) => setYear(e.target.value)}
           title="Filter by year of the lend"
-          className="rounded-lg border border-line bg-tint px-2.5 py-2 text-sm text-slate hover:bg-tint-hover focus:outline-none"
+          className={selectCls}
         >
           <option value="all">All years</option>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -301,18 +303,17 @@ export default function Dashboard() {
           className={secondaryBtnCls}
           title="Reload the table"
         >
-          <span
-            className={`material-symbols-outlined text-[18px] ${refreshing ? "animate-spin" : ""}`}
-          >
-            refresh
-          </span>
+          <i
+            className={`ph ph-arrows-clockwise text-lg ${refreshing ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
           Refresh
         </button>
 
         {/* Writing is Admin/Lender only — view-only accounts browse. */}
         {canEdit() && (
           <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
-            <span className="material-symbols-outlined text-[18px]">add</span>
+            <i className="ph ph-plus text-lg" aria-hidden="true" />
             Add Entry
           </button>
         )}
@@ -322,7 +323,7 @@ export default function Dashboard() {
           views show the already-filtered `shown` groups; only the shape
           changes (grouped rows vs flat grid). */}
       {view === "Groups" ? (
-        <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+        <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <EntryGroupTable
             groups={shown}
             actions={canEdit() ? actionsFor : undefined}
@@ -333,7 +334,7 @@ export default function Dashboard() {
       ) : (
         // Flat grid — same data, one row per lend, sorted by customer,
         // every data column editable in the cell.
-        <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+        <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <GridTable
             groups={shown}
             customers={customers}

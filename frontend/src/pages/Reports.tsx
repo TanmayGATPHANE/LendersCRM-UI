@@ -4,6 +4,8 @@ import {
 } from "../api/client.ts";
 import type { CustomerReportRow, ReleaseReportRow, SummaryRow } from "../api/types.ts";
 import { money, shortDate } from "../utils/format.ts";
+import { selectCls } from "../components/ui.ts";
+import { Field } from "../components/Field.tsx";
 import { toast } from "../components/Toast.tsx";
 
 /**
@@ -72,15 +74,16 @@ export default function Reports() {
   };
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Toolbar: report tabs on the left, year filter beside the Summary */}
-      <div className="flex shrink-0 items-center gap-3 pb-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <div className="flex rounded-lg border border-line bg-card p-0.5">
           {TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors duration-300 ease-brand
+                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                 tab === t ? "bg-primary text-on-primary" : "text-slate hover:bg-tint-hover"
               }`}
             >
@@ -95,7 +98,7 @@ export default function Reports() {
             value={year}
             onChange={(e) => setYear(e.target.value)}
             title="Filter by year"
-            className="rounded-lg border border-line bg-tint px-2.5 py-2 text-sm text-slate hover:bg-tint-hover focus:outline-none"
+            className={selectCls}
           >
             <option value="all">All years</option>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -104,7 +107,7 @@ export default function Reports() {
       </div>
 
       {/* The report — scrollable like every other table */}
-      <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+      <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted">
             Loading…
@@ -128,7 +131,32 @@ function SummaryTable({ rows, th, thR, td, tdR }: {
   if (rows.length === 0) return <Empty text="No cash movement recorded yet." />;
   const t = (k: keyof SummaryRow) => rows.reduce((s, r) => s + (r[k] as number), 0);
   return (
-    <table className="w-full table-fixed min-w-[760px] text-sm">
+    <>
+      {/* Mobile: one card per month */}
+      <div className="stagger space-y-2 p-3 md:hidden">
+        {rows.map((r) => (
+          <div key={r.month} className="rounded-xl border border-line p-3 shadow-sm">
+            <p className="text-sm font-semibold text-ink">{monthLabel(r.month)}</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <Field label="Lend out">{money(r.lentOut)}</Field>
+              <Field label="Principal in">{money(r.principalIn)}</Field>
+              <Field label="Interest in">{money(r.interestIn)}</Field>
+              <Field label="Manual in" tone="in">{r.manualIn ? `+${money(r.manualIn)}` : "—"}</Field>
+              <Field label="Manual out" tone="out">{r.manualOut ? `−${money(r.manualOut)}` : "—"}</Field>
+              <Field label="Net" tone={r.net < 0 ? "out" : "in"}>{money(r.net)}</Field>
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center justify-between rounded-xl bg-tint p-3 text-sm">
+          <span className="font-medium uppercase tracking-wider text-muted">Total</span>
+          <span className="tabular-nums font-medium text-ink">
+            Lend {money(t("lentOut"))} · In {money(t("principalIn") + t("interestIn") + t("manualIn"))} · Net{" "}
+            <span className={t("net") < 0 ? "text-red-600" : "text-green-700"}>{money(t("net"))}</span>
+          </span>
+        </div>
+      </div>
+
+      <table className="hidden w-full table-fixed min-w-[760px] text-sm md:table">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           <th className={`${th} w-[14%]`}>Month</th>
@@ -169,6 +197,7 @@ function SummaryTable({ rows, th, thR, td, tdR }: {
         </tr>
       </tfoot>
     </table>
+    </>
   );
 }
 
@@ -180,7 +209,45 @@ function CustomersTable({ rows, th, thR, td, tdR }: {
   const t = (k: "totalLent" | "returnedPrincipal" | "interestCollected" | "activeOutstanding" | "interestAccruing") =>
     rows.reduce((s, r) => s + r[k], 0);
   return (
-    <table className="w-full table-fixed min-w-[860px] text-sm">
+    <>
+      {/* Mobile: one card per customer */}
+      <div className="stagger space-y-2 p-3 md:hidden">
+        {rows.map((r) => (
+          <div key={r.customerId} className="rounded-xl border border-line p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
+                {r.name}
+                {r.address && (
+                  <span className="ml-1.5 text-xs font-normal text-muted">· {r.address}</span>
+                )}
+              </span>
+              <span className="shrink-0 text-xs text-muted">
+                {r.lends} lends ({r.activeLends} active)
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Field label="Total lent">{money(r.totalLent)}</Field>
+              <Field label="Returned">{money(r.returnedPrincipal)}</Field>
+              <Field label="Interest collected" tone="in">{money(r.interestCollected)}</Field>
+              <Field label="Outstanding" tone={r.activeOutstanding > 0 ? "ink" : "muted"}>
+                {money(r.activeOutstanding)}
+              </Field>
+              <Field label="Accruing today" tone="muted">
+                {r.interestAccruing ? money(r.interestAccruing) : "—"}
+              </Field>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-xl bg-tint p-3 text-sm">
+          <span className="font-medium uppercase tracking-wider text-muted">Total</span>{" "}
+          <span className="tabular-nums text-ink">
+            Lent {money(t("totalLent"))} · Returned {money(t("returnedPrincipal"))} · Interest{" "}
+            {money(t("interestCollected"))} · Outstanding {money(t("activeOutstanding"))}
+          </span>
+        </div>
+      </div>
+
+      <table className="hidden w-full table-fixed min-w-[860px] text-sm md:table">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           <th className={`${th} w-[18%]`}>Customer</th>
@@ -198,14 +265,14 @@ function CustomersTable({ rows, th, thR, td, tdR }: {
             <td className={td}>
               {r.name}
               {r.address && (
-                <span className="ml-1.5 whitespace-nowrap text-[11px] text-muted">
+                <span className="ml-1.5 whitespace-nowrap text-xs text-muted">
                   · {r.address}
                 </span>
               )}
             </td>
             <td className={`${td} text-slate`}>
               {r.lends}
-              <span className="text-[11px] text-muted"> ({r.activeLends} active)</span>
+              <span className="text-xs text-muted"> ({r.activeLends} active)</span>
             </td>
             <td className={`${tdR} text-ink`}>{money(r.totalLent)}</td>
             <td className={`${tdR} text-ink`}>{money(r.returnedPrincipal)}</td>
@@ -229,6 +296,7 @@ function CustomersTable({ rows, th, thR, td, tdR }: {
         </tr>
       </tfoot>
     </table>
+    </>
   );
 }
 
@@ -240,7 +308,41 @@ function ReleasedTable({ rows, th, thR, td, tdR }: {
   const t = (k: "lent" | "recoveredPrincipal" | "interestCollected") =>
     rows.reduce((s, r) => s + r[k], 0);
   return (
-    <table className="w-full table-fixed min-w-[860px] text-sm">
+    <>
+      {/* Mobile: one card per released collateral */}
+      <div className="stagger space-y-2 p-3 md:hidden">
+        {rows.map((r) => (
+          <div key={r.groupId} className="rounded-xl border border-line p-3 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
+                {r.item}
+                <span className="ml-1.5 text-xs font-normal text-muted">· {r.customer}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted">
+                {r.daysHeld} days held
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <Field label="Lent">{money(r.lent)}</Field>
+              <Field label="Recovered">{money(r.recoveredPrincipal)}</Field>
+              <Field label="Interest" tone="in">{money(r.interestCollected)}</Field>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Released {r.releasedDate ? shortDate(r.releasedDate) : "—"}
+              {r.totalCollected != null ? ` · collected ${money(r.totalCollected)}` : ""}
+            </p>
+          </div>
+        ))}
+        <div className="rounded-xl bg-tint p-3 text-sm">
+          <span className="font-medium uppercase tracking-wider text-muted">Total</span>{" "}
+          <span className="tabular-nums text-ink">
+            Lent {money(t("lent"))} · Recovered {money(t("recoveredPrincipal"))} · Interest{" "}
+            {money(t("interestCollected"))}
+          </span>
+        </div>
+      </div>
+
+      <table className="hidden w-full table-fixed min-w-[860px] text-sm md:table">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           <th className={`${th} w-[22%]`}>Collateral</th>
@@ -257,7 +359,7 @@ function ReleasedTable({ rows, th, thR, td, tdR }: {
           <tr key={r.groupId} className="hover:bg-tint even:bg-tint/40">
             <td className={td}>
               {r.item}
-              <span className="ml-1.5 whitespace-nowrap text-[11px] text-muted">
+              <span className="ml-1.5 whitespace-nowrap text-xs text-muted">
                 · {r.customer}
               </span>
             </td>
@@ -286,6 +388,7 @@ function ReleasedTable({ rows, th, thR, td, tdR }: {
         </tr>
       </tfoot>
     </table>
+    </>
   );
 }
 
@@ -293,7 +396,7 @@ function ReleasedTable({ rows, th, thR, td, tdR }: {
 function Empty({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-center gap-1.5 py-12 text-center">
-      <span className="material-symbols-outlined text-[28px] text-dim">summarize</span>
+      <i className="ph ph-chart-bar text-2xl text-dim" aria-hidden="true" />
       <span className="text-sm text-slate">{text}</span>
     </div>
   );

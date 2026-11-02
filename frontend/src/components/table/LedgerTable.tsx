@@ -69,9 +69,11 @@ export default function LedgerTable({ group, onEditEntry }: Props) {
                       if (entry) onEditEntry(entry);
                     }}
                     title="Edit this lend"
-                    className="rounded p-1 text-muted hover:bg-tint-hover hover:text-primary"
+                    className={`rounded p-1 text-muted hover:bg-tint-hover hover:text-primary
+                                focus-visible:outline-none focus-visible:ring-2
+                                focus-visible:ring-primary/40 transition-colors duration-300 ease-brand`}
                   >
-                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                    <i className="ph ph-pencil-simple text-base" aria-hidden="true" />
                   </button>
                 )}
               </td>

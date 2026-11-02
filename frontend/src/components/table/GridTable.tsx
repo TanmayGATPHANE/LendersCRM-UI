@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { CollateralGroup, Customer, EntryStatus } from "../../api/types.ts";
 import StatusBadge from "../StatusBadge.tsx";
+import { Field } from "../Field.tsx";
 import FlashTr, { type FlashHint } from "./FlashTr.tsx";
 import { money, shortDate } from "../../utils/format.ts";
 import { interestFor } from "../../utils/interest.ts";
@@ -157,7 +158,7 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
     );
 
   // Locked column widths (table-fixed); Notes absorbs whatever is left.
-  const th = "px-3 py-1.5 text-left text-[11px] font-medium uppercase tracking-wider text-muted";
+  const th = "px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wider text-muted";
   const thR = `${th} text-right`;
   const cell = "px-3 py-1 text-xs text-slate truncate"; // dense grid cell
   const cellR = `${cell} text-right`;
@@ -191,7 +192,25 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
   const visible = rows.filter(passesFilters); // filters hit the totals too
 
   return (
-    <table className="w-full table-fixed min-w-[1080px] text-sm">
+    <>
+      {/* Mobile: one card per movement, newest passbook order kept */}
+      <div className="stagger space-y-2 p-3 md:hidden">
+        {visible.map((r) => (
+          <GridCard key={r.key} r={r} />
+        ))}
+        {visible.length === 0 && (
+          <div className="flex flex-col items-center gap-1.5 py-12 text-center">
+            <i className="ph ph-table text-2xl text-dim" aria-hidden="true" />
+            <span className="text-sm text-slate">No entries in the grid</span>
+            <span className="text-xs text-muted">
+              Nothing matches the search / filters — try clearing them, or add an entry.
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: the flat editable spreadsheet (from md up) */}
+      <table className="hidden w-full table-fixed min-w-[1080px] text-sm md:table">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           <th className={`${th} w-[8%]`}>Date</th>
@@ -217,13 +236,13 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
                 onChange={(e) => setColFilters({ ...colFilters, [col]: e.target.value })}
                 placeholder="Filter…"
                 title={`Filter by ${col}`}
-                className="w-full rounded border border-line bg-tint px-1.5 py-0.5 text-[11px] font-normal focus:border-primary focus:outline-none"
+                className="w-full rounded border border-line bg-tint px-1.5 py-0.5 text-xs font-normal focus:border-primary focus:outline-none"
               />
             </th>
           ))}
         </tr>
       </thead>
-      <tbody className="divide-y divide-line">
+      <tbody className="stagger divide-y divide-line">
         {visible.map((r) => {
           const patch = save(r); // commit for THIS row
           const lendOnly = r.editable && r.kind === "lend";
@@ -246,7 +265,7 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
                   <span className="truncate">
                     {r.customer}
                     {r.customerAddress && (
-                      <span className="text-[10px] text-dim"> · {r.customerAddress}</span>
+                      <span className="text-xs text-dim"> · {r.customerAddress}</span>
                     )}
                   </span>
                 }
@@ -302,7 +321,7 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
           <tr>
             <td colSpan={11} className="px-3 py-12">
               <div className="flex flex-col items-center gap-1.5 text-center">
-                <span className="material-symbols-outlined text-[28px] text-dim">grid_on</span>
+                <i className="ph ph-table text-2xl text-dim" aria-hidden="true" />
                 <span className="text-sm text-slate">No entries in the grid</span>
                 <span className="text-xs text-muted">
                   Nothing matches the search / filters — try clearing them, or add an entry.
@@ -330,6 +349,49 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
         </tfoot>
       )}
     </table>
+    </>
+  );
+}
+
+/** GridCard — one lend / partial return as a phone-size card (the grid's
+    flat rows, read-only on mobile: cell edits stay a desktop gesture). */
+function GridCard({ r }: { r: GridRow }) {
+  return (
+    <div className="rounded-xl border border-line bg-card p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-ink">
+            {r.customer}
+            {r.customerAddress && (
+              <span className="ml-1.5 text-xs font-normal text-muted">· {r.customerAddress}</span>
+            )}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-slate">{r.item}</span>
+        </div>
+        {r.status ? <StatusBadge status={r.status} /> : (
+          <span className="shrink-0 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-600">
+            {r.type}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Field label={r.type === "Payment" ? "Received" : "Lent"}
+               tone={r.type === "Payment" ? "out" : "ink"}>
+          {r.type === "Payment" ? `−${r.received}` : r.amountText ?? "—"}
+        </Field>
+        <Field label="Rate" tone="muted">{r.rate != null ? `${r.rate}%/mo` : "—"}</Field>
+        <Field label="Interest" tone="muted">{r.interest || "—"}</Field>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">
+        <span className="truncate">
+          {shortDate(r.date)}
+          {r.released ? ` · released ${shortDate(r.released)}` : ""}
+          {r.notes ? ` · ${r.notes}` : ""}
+        </span>
+      </div>
+    </div>
   );
 }
 

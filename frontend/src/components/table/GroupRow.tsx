@@ -43,16 +43,14 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, onEdit
         <td className={`${td} whitespace-nowrap text-xs text-slate`}>
           <span className="inline-flex items-center gap-1">
             {shortDate(g.date)}
-            <span className={`material-symbols-outlined text-[16px] text-dim transition-transform ${expanded ? "rotate-180" : ""}`}>
-              expand_more
-            </span>
+            <i className={`ph ph-caret-down text-base text-dim transition-transform duration-300 ease-brand ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
           </span>
         </td>
         {/* Name + area on ONE line — the city never drops below the name. */}
         <td className={td}>
           {g.customerName}
           {g.customerAddress && (
-            <span className="ml-1.5 whitespace-nowrap text-[11px] text-muted">
+            <span className="ml-1.5 whitespace-nowrap text-xs text-muted">
               · {g.customerAddress}
             </span>
           )}
@@ -70,7 +68,7 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, onEdit
               ? money(g.primary.totalCollected ?? g.subs.reduce((s, x) => s + (x.amountReturned ?? x.amount), 0))
               : money(g.primary.amount)}
             {g.status !== "Released" && g.subs.length > 1 && (
-              <span className="rounded bg-tint px-1.5 py-0.5 text-[11px] font-medium text-primary">
+              <span className="rounded bg-tint px-1.5 py-0.5 text-xs font-medium text-primary">
                 +{g.subs.length - 1}
               </span>
             )}

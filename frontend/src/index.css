@@ -34,14 +34,68 @@
   --color-badge-ok-bg: #dcfce7; /* Active */
   --color-badge-off: #475569;
   --color-badge-off-bg: #f1f5f9; /* Released */
+
+  /* Motion — the one easing curve every transition shares: weighted,
+     decelerates into place (no browser-default ease anywhere). */
+  --ease-brand: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Make Material Symbols line up with text they sit next to. */
-.material-symbols-outlined {
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
-  display: inline-block;
-  line-height: 1;
-  user-select: none;
+/* Login card entrance: rises a short distance while fading in. Only
+   transform and opacity animate; reduced-motion users get a static card. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: rise-in 0.5s var(--ease-brand) both; }
+
+/* ---- Motion library: one-shot entrances + ambient drift ----
+   Everything animates only transform and opacity; all of it collapses
+   to the final state under prefers-reduced-motion. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(-18px, -26px); }
+}
+.anim-fade-up { animation: fade-up 0.5s var(--ease-brand) both; }
+.anim-fade-in { animation: fade-in 0.25s var(--ease-brand) both; }
+.anim-pop-in { animation: pop-in 0.2s var(--ease-brand) both; }
+.anim-toast-in { animation: toast-in 0.3s var(--ease-brand) both; }
+.anim-drift { animation: drift 11s var(--ease-brand) infinite; }
+.anim-drift-slow { animation: drift 17s var(--ease-brand) infinite reverse; }
+
+/* Staggered entrance for children (tiles, rows, menu blocks): each child
+   rises 40ms after the previous one, capped so long lists never crawl. */
+.stagger > * { animation: fade-up 0.45s var(--ease-brand) both; }
+.stagger > *:nth-child(2)  { animation-delay: 45ms; }
+.stagger > *:nth-child(3)  { animation-delay: 90ms; }
+.stagger > *:nth-child(4)  { animation-delay: 135ms; }
+.stagger > *:nth-child(5)  { animation-delay: 180ms; }
+.stagger > *:nth-child(6)  { animation-delay: 225ms; }
+.stagger > *:nth-child(7)  { animation-delay: 270ms; }
+.stagger > *:nth-child(8)  { animation-delay: 315ms; }
+.stagger > *:nth-child(9)  { animation-delay: 360ms; }
+.stagger > *:nth-child(n + 10) { animation-delay: 405ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .anim-fade-up, .anim-fade-in, .anim-pop-in, .anim-toast-in,
+  .anim-drift, .anim-drift-slow,
+  .stagger > * { animation: none; }
 }
 
 /* Scroll containers that sit under the page (table bodies, modal bodies).

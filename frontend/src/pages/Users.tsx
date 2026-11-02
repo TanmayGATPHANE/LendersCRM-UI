@@ -41,10 +41,10 @@ export default function Users() {
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Toolbar: search left, Add User right */}
-      <div className="flex shrink-0 items-center gap-3 pb-3">
-        <div className="max-w-xs flex-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
+        <div className="min-w-44 max-w-xs flex-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -54,14 +54,45 @@ export default function Users() {
         </div>
         <div className="flex-1" />
         <button onClick={() => setAdding(true)} className={primaryBtnCls}>
-          <span className="material-symbols-outlined text-[18px]">add</span>
+          <i className="ph ph-plus text-lg" aria-hidden="true" />
           Add User
         </button>
       </div>
 
-      {/* Users table — scrollable like the other tables */}
-      <div className="table-scroll flex-1 overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
-        <table className="w-full min-w-[560px] text-sm">
+      {/* Users — cards on phones, the table from md up */}
+      <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+        <div className="stagger space-y-2 p-3 md:hidden">
+          {shown.map((u) => (
+            <div key={u.id} className="rounded-xl border border-line p-3 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-ink">{u.name}</span>
+                  <span className="block truncate text-xs text-muted">{u.email}</span>
+                </div>
+                <DotsMenu
+                  items={[
+                    { label: u.isActive ? "Disable" : "Enable", onClick: () => toggleActive(u) },
+                  ]}
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <RoleBadge role={u.role} />
+                <span
+                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    u.isActive ? "bg-badge-ok-bg text-badge-ok" : "bg-badge-off-bg text-badge-off"
+                  }`}
+                >
+                  {u.isActive ? "Active" : "Disabled"}
+                </span>
+              </div>
+            </div>
+          ))}
+          {shown.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted">No users found.</p>
+          )}
+        </div>
+
+        <table className="hidden w-full min-w-[560px] text-sm md:table">
           <thead className="sticky top-0 z-10 bg-card border-b border-line">
             <tr>
               <th className={th}>Name</th>
@@ -101,7 +132,7 @@ export default function Users() {
               </tr>
             ))}
             {shown.length === 0 && (
-              <tr>
+              <tr className="hidden md:table-row">
                 <td colSpan={5} className="px-3 py-10 text-center text-sm text-muted">
                   No users found.
                 </td>
