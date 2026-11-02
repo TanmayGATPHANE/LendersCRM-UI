@@ -11,6 +11,7 @@ const TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/customers": "Customers",
   "/cash": "Cash",
+  "/reports": "Reports",
   "/users": "Users",
 };
 
@@ -72,6 +73,10 @@ export default function Layout() {
             <NavLink to="/cash" className={linkClass}>
               <span className="material-symbols-outlined text-[20px]">payments</span>
               Cash
+            </NavLink>
+            <NavLink to="/reports" className={linkClass}>
+              <span className="material-symbols-outlined text-[20px]">summarize</span>
+              Reports
             </NavLink>
             {/* Admin-only page */}
             {user?.role === "Admin" && (

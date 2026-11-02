@@ -103,6 +103,46 @@ export interface SavedWhere {
   groupId?: number;
 }
 
+// ---- Reports page (§3.6) — the API computes every row; tables only display.
+
+/** One money row per month of the cash ledger (Summary tab). */
+export interface SummaryRow {
+  month: string; // "2026-10"
+  lentOut: number; // lends (money out)
+  principalIn: number; // partial returns + release principal
+  interestIn: number; // release interest legs
+  manualIn: number; // manual + rows
+  manualOut: number; // manual − rows (positive)
+  net: number; // the ledger's sum for the month
+}
+
+/** Per-customer lifetime track record (Customers tab). */
+export interface CustomerReportRow {
+  customerId: number;
+  name: string;
+  address: string;
+  lends: number;
+  activeLends: number;
+  totalLent: number;
+  returnedPrincipal: number;
+  interestCollected: number;
+  activeOutstanding: number;
+  interestAccruing: number;
+}
+
+/** Per-released-collateral outcome (Released tab). */
+export interface ReleaseReportRow {
+  groupId: number;
+  customer: string;
+  item: string;
+  lent: number;
+  releasedDate: string | null;
+  daysHeld: number;
+  recoveredPrincipal: number;
+  interestCollected: number;
+  totalCollected: number | null;
+}
+
 // ---- global search (the header box) ----
 
 /** One hit of the header's global search. type: "customer" | "user" |

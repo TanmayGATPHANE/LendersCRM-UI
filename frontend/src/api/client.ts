@@ -16,11 +16,12 @@ import {
   mockAddPartial, mockAddEntry, mockUpdateEntry, mockUpdatePartial,
   mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger,
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
-  mockUpdateUser, mockGlobalSearch,
+  mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
+  mockReportReleases,
 } from "./mockApi.ts";
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
-  SearchResults,
+  SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -126,6 +127,11 @@ interface DataLayer {
   fetchUsers(): Promise<UserItem[]>;
   addUser(values: { name: string; email: string; password: string; role: Role }): Promise<UserItem>;
   updateUser(id: number, patch: { name?: string; role?: Role; isActive?: boolean; password?: string }): Promise<UserItem>;
+
+  // The Reports page (§3.6) — read-only, all rows backend-computed.
+  fetchReportSummary(year?: number): Promise<SummaryRow[]>;
+  fetchReportCustomers(): Promise<CustomerReportRow[]>;
+  fetchReportReleases(): Promise<ReleaseReportRow[]>;
 }
 
 /** The real backend, one entry per endpoint in plan §6 — same function
@@ -231,6 +237,13 @@ const api: DataLayer = {
 
   updateUser: (id, patch) =>
     http<UserItem>(`/api/users/${id}`, { method: "PUT", body: patch }),
+
+  fetchReportSummary: (year) =>
+    http<SummaryRow[]>(`/api/reports/summary${year ? `?year=${year}` : ""}`),
+
+  fetchReportCustomers: () => http<CustomerReportRow[]>("/api/reports/customers"),
+
+  fetchReportReleases: () => http<ReleaseReportRow[]>("/api/reports/releases"),
 };
 
 /** The mock pair — same names, so the switch below is a pure toggle. */
@@ -260,6 +273,9 @@ const mock: DataLayer = {
   fetchUsers: mockFetchUsers,
   addUser: mockAddUser,
   updateUser: mockUpdateUser,
+  fetchReportSummary: mockReportSummary,
+  fetchReportCustomers: mockReportCustomers,
+  fetchReportReleases: mockReportReleases,
 };
 
 const impl: DataLayer = USE_MOCK ? mock : api;
@@ -296,3 +312,6 @@ export const releaseGroup = (groupId: number, values: Parameters<DataLayer["rele
 export const fetchUsers = () => impl.fetchUsers();
 export const addUser = (values: { name: string; email: string; password: string; role: Role }) => impl.addUser(values);
 export const updateUser = (id: number, patch: { name?: string; role?: Role; isActive?: boolean; password?: string }) => impl.updateUser(id, patch);
+export const fetchReportSummary = (year?: number) => impl.fetchReportSummary(year);
+export const fetchReportCustomers = () => impl.fetchReportCustomers();
+export const fetchReportReleases = () => impl.fetchReportReleases();

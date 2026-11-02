@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard.tsx";
 import Customers from "./pages/Customers.tsx";
 import Users from "./pages/Users.tsx";
 import Cash from "./pages/Cash.tsx";
+import Reports from "./pages/Reports.tsx";
 import { currentUser } from "./api/client.ts";
 import type { Role } from "./api/types.ts";
 
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/cash" element={<Cash />} />
+          <Route path="/reports" element={<Reports />} />
           <Route
             path="/users"
             element={

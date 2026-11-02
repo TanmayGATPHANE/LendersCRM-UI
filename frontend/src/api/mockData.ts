@@ -83,22 +83,22 @@ export const seedEntries: MockEntry[] = [
   {
     id: 9, groupId: 9, date: "2026-09-12", customerId: 2,
     item: "Rado Watch", amount: 6500, rate: 1, status: "Released", notes: "",
-    amountReturned: 7390, interestCollected: 570, releasedDate: "2026-10-25",
+    amountReturned: 7070, interestCollected: 570, releasedDate: "2026-10-25", totalCollected: 7070,
   },
   {
     id: 10, groupId: 10, date: "2026-09-05", customerId: 4,
     item: "Yamaha FZ Papers", amount: 22000, rate: 2, status: "Released", notes: "",
-    amountReturned: 27280, interestCollected: 2933, releasedDate: "2026-10-22",
+    amountReturned: 24933, interestCollected: 2933, releasedDate: "2026-10-22", totalCollected: 24933,
   },
   {
     id: 11, groupId: 11, date: "2026-08-14", customerId: 5,
     item: "Sony Soundbar", amount: 5500, rate: null, status: "Released", notes: "",
-    amountReturned: 5500, interestCollected: 0, releasedDate: "2026-09-10",
+    amountReturned: 5500, interestCollected: 0, releasedDate: "2026-09-10", totalCollected: 5500,
   },
   {
     id: 12, groupId: 12, date: "2026-08-01", customerId: 6,
     item: "Gold Ring (4g)", amount: 9500, rate: 2, status: "Released", notes: "",
-    amountReturned: 11800, interestCollected: 1150, releasedDate: "2026-10-15",
+    amountReturned: 10650, interestCollected: 1150, releasedDate: "2026-10-15", totalCollected: 10650,
   },
 ];
 
@@ -168,13 +168,13 @@ export const seedCashLedger: CashLedgerItem[] = [
   { id: 9, date: "2026-10-10", amount: 10000, source: "PartialReturn", groupId: 8, referenceId: 1, notes: "Cash on Dussehra" },
   { id: 10, date: "2026-10-20", amount: 2500, source: "PartialReturn", groupId: 1, referenceId: 2, notes: "First instalment" },
   // Releases — the two entries each one posts
-  { id: 11, date: "2026-10-25", amount: 6820, source: "ReleasePrincipal", groupId: 9, referenceId: null, notes: null },
+  { id: 11, date: "2026-10-25", amount: 6500, source: "ReleasePrincipal", groupId: 9, referenceId: null, notes: null },
   { id: 12, date: "2026-10-25", amount: 570, source: "ReleaseInterest", groupId: 9, referenceId: null, notes: null },
-  { id: 13, date: "2026-10-22", amount: 24347, source: "ReleasePrincipal", groupId: 10, referenceId: null, notes: null },
+  { id: 13, date: "2026-10-22", amount: 22000, source: "ReleasePrincipal", groupId: 10, referenceId: null, notes: null },
   { id: 14, date: "2026-10-22", amount: 2933, source: "ReleaseInterest", groupId: 10, referenceId: null, notes: null },
   { id: 15, date: "2026-09-10", amount: 5500, source: "ReleasePrincipal", groupId: 11, referenceId: null, notes: null },
   { id: 16, date: "2026-09-10", amount: 0, source: "ReleaseInterest", groupId: 11, referenceId: null, notes: null },
-  { id: 17, date: "2026-10-15", amount: 10650, source: "ReleasePrincipal", groupId: 12, referenceId: null, notes: null },
+  { id: 17, date: "2026-10-15", amount: 9500, source: "ReleasePrincipal", groupId: 12, referenceId: null, notes: null },
   { id: 18, date: "2026-10-15", amount: 1150, source: "ReleaseInterest", groupId: 12, referenceId: null, notes: null },
   // The remaining active lends went out more recently
   { id: 19, date: "2026-10-24", amount: -8500, source: "Lend", groupId: 5, referenceId: 5, notes: null },

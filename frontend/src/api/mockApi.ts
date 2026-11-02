@@ -5,7 +5,7 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, SearchHit, SearchResults, UserItem } from "./types.ts";
+import type { AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
 
@@ -356,6 +356,112 @@ export function mockDeleteCashEntry(id: number): Promise<void> {
       return reject(new Error("Only manual (±) cash entries can be deleted — lending rows belong to their lend/release records"));
     cashLedger.splice(cashLedger.indexOf(row), 1);
     resolve();
+  });
+}
+
+/** Mock GET /api/reports/summary?year= — one money row per month of the
+    ledger, same slicing the backend does off the CashLedger table. */
+export function mockReportSummary(year?: number): Promise<SummaryRow[]> {
+  return new Promise((resolve) => {
+    const row = (month: string, rows: typeof cashLedger): SummaryRow => ({
+      month,
+      lentOut: rows.filter((x) => x.source === "Lend").reduce((s, x) => s - x.amount, 0),
+      principalIn: rows.filter((x) => x.source === "PartialReturn" || x.source === "ReleasePrincipal").reduce((s, x) => s + x.amount, 0),
+      interestIn: rows.filter((x) => x.source === "ReleaseInterest").reduce((s, x) => s + x.amount, 0),
+      manualIn: rows.filter((x) => x.source === "Manual" && x.amount > 0).reduce((s, x) => s + x.amount, 0),
+      manualOut: rows.filter((x) => x.source === "Manual" && x.amount < 0).reduce((s, x) => s - x.amount, 0),
+      net: rows.reduce((s, x) => s + x.amount, 0),
+    });
+    const byMonth = new Map<string, typeof cashLedger>();
+    for (const x of [...cashLedger].sort((a, b) => a.date.localeCompare(b.date))) {
+      if (year && Number(x.date.slice(0, 4)) !== year) continue;
+      const m = x.date.slice(0, 7);
+      if (!byMonth.has(m)) byMonth.set(m, []);
+      byMonth.get(m)!.push(x);
+    }
+    resolve([...byMonth.entries()].map(([m, rows]) => row(m, rows)));
+  });
+}
+
+/** Mock GET /api/reports/customers — per-customer lifetime track record
+    with the same formulas as CustomersAsync (partials + release legs). */
+export function mockReportCustomers(): Promise<CustomerReportRow[]> {
+  return new Promise((resolve) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const byCustomer = new Map<number, typeof entries>();
+    for (const e of entries) {
+      if (!byCustomer.has(e.customerId)) byCustomer.set(e.customerId, []);
+      byCustomer.get(e.customerId)!.push(e as typeof entries[number]);
+    }
+    const rows: CustomerReportRow[] = [];
+    for (const [customerId, mine] of byCustomer) {
+      const c = customers.find((x) => x.id === customerId);
+      mine.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+      const active = mine.filter((e) => e.status === "Active");
+      const released = mine.filter((e) => e.status === "Released");
+      const groupIds = new Set(mine.map((e) => e.groupId));
+      const activeGroupIds = new Set(active.map((e) => e.groupId));
+      const partialsActive = partials
+        .filter((p) => activeGroupIds.has(p.groupId)).reduce((s, p) => s + p.amount, 0);
+      const partialsAll = partials
+        .filter((p) => groupIds.has(p.groupId)).reduce((s, p) => s + p.amount, 0);
+      const groupPaid = new Map<number, Map<number, number>>();
+      for (const g of activeGroupIds) {
+        const subs = active.filter((e) => e.groupId === g);
+        const paid = allocatePaid(subs as Entry[], partials
+          .filter((p) => p.groupId === g).reduce((s, p) => s + p.amount, 0));
+        groupPaid.set(g, paid);
+      }
+      rows.push({
+        customerId,
+        name: c?.name ?? "?",
+        address: c?.address ?? "",
+        lends: mine.length,
+        activeLends: active.length,
+        totalLent: mine.reduce((s, e) => s + e.amount, 0),
+        returnedPrincipal: partialsAll + released.reduce(
+          (s, e) => s + (e.amountReturned ?? e.amount) - (e.interestCollected ?? 0), 0),
+        interestCollected: released.reduce((s, e) => s + (e.interestCollected ?? 0), 0),
+        activeOutstanding: active.reduce((s, e) => s + e.amount, 0) - partialsActive,
+        interestAccruing: active.reduce((s, e) => {
+          const paid = groupPaid.get(e.groupId)?.get(e.id) ?? 0;
+          return s + accruedInterest({ ...e, paid } as Entry, today);
+        }, 0),
+      });
+    }
+    resolve(rows.sort((a, b) => a.name.localeCompare(b.name)));
+  });
+}
+
+/** Mock GET /api/reports/releases — one row per released collateral. */
+export function mockReportReleases(): Promise<ReleaseReportRow[]> {
+  return new Promise((resolve) => {
+    const released = entries.filter((e) => e.status === "Released");
+    const byGroup = new Map<number, typeof released>();
+    for (const e of released) {
+      if (!byGroup.has(e.groupId)) byGroup.set(e.groupId, []);
+      byGroup.get(e.groupId)!.push(e as typeof released[number]);
+    }
+    const rows: ReleaseReportRow[] = [];
+    for (const [groupId, subs] of byGroup) {
+      subs.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+      const primary = subs[0];
+      const c = customers.find((x) => x.id === primary.customerId);
+      rows.push({
+        groupId,
+        customer: c?.name ?? "?",
+        item: primary.item,
+        lent: subs.reduce((s, e) => s + e.amount, 0),
+        releasedDate: primary.releasedDate ?? null,
+        daysHeld: primary.releasedDate
+          ? Math.max(0, Math.round((new Date(primary.releasedDate).getTime() - new Date(primary.date).getTime()) / 86400000))
+          : 0,
+        recoveredPrincipal: subs.reduce((s, e) => s + (e.amountReturned ?? e.amount) - (e.interestCollected ?? 0), 0),
+        interestCollected: subs.reduce((s, e) => s + (e.interestCollected ?? 0), 0),
+        totalCollected: (primary as { totalCollected?: number }).totalCollected ?? null,
+      });
+    }
+    resolve(rows.sort((a, b) => (b.releasedDate ?? "").localeCompare(a.releasedDate ?? "") || a.groupId - b.groupId));
   });
 }
 
