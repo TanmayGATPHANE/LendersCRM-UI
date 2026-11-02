@@ -6,6 +6,7 @@ import HistoryView from "../components/history/HistoryView.tsx";
 import { fetchCustomers, fetchEntries, fetchPartials, canEdit } from "../api/client.ts";
 import type { Customer, Entry, Payment } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
+import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 
 /**
  * Customers — the directory of people who borrow. Same behaviour as the
@@ -69,6 +70,11 @@ export default function Customers() {
     );
   }, [customers, search]);
 
+  // Paged rendering — 50 customers at a time (scroll or "Show more"),
+  // so a thousand-name directory never lays itself all out at once.
+  const [visibleCustomers, moreCustomers] = useChunkedRows(shown.length);
+  const page = shown.slice(0, visibleCustomers);
+
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
   return (
@@ -96,7 +102,7 @@ export default function Customers() {
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {/* Mobile: one card per customer, history expands inline */}
         <div className="stagger space-y-2 p-3 md:hidden">
-          {shown.map((c) => (
+          {page.map((c) => (
             <div key={c.id} className="rounded-xl border border-line p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
                 <button
@@ -158,7 +164,7 @@ export default function Customers() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {shown.map((c) => (
+            {page.map((c) => (
               // Fragment so the customer row and (optionally) their detail
               // row render as siblings under one key.
               <Fragment key={c.id}>
@@ -219,6 +225,11 @@ export default function Customers() {
             )}
           </tbody>
         </table>
+
+        {/* Paged footer — BELOW the table, so on desktop it sits at the
+            end of the scrolled content (an auto-load observer above the
+            rows would fire on mount and drain the whole page). */}
+        <LoadMore visible={visibleCustomers} total={shown.length} onMore={moreCustomers} />
       </div>
 
       {/* Add / edit customer dialog (own component, two modes) */}

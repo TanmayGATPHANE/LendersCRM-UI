@@ -197,3 +197,17 @@ export interface EntryForm {
   rate: string;
   notes: string;
 }
+/** GET /api/activity — one row of the audit trail (§10): who did what,
+    when, to which record. The Activity tab (Admin) lists them; a
+    collateral group's rows power the expanded-row history panel. */
+export interface ActivityItem {
+  id: number;
+  atUtc: string; // ISO datetime (UTC) — the UI renders local
+  userId: number | null;
+  userName: string; // name snapshot taken at write time
+  action: string; // Created | Updated | Released | Deleted
+  entity: string; // Entry | Customer | Payment | CashLedger | User | Group
+  entityId: number;
+  groupId: number | null; // set when the action belongs to a collateral
+  details: string; // "Edited lend: amount ₹20,000 → ₹25,000"
+}

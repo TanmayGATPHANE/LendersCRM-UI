@@ -3,6 +3,7 @@ import type { MenuItem } from "../DotsMenu.tsx";
 import DotsMenu from "../DotsMenu.tsx";
 import StatusBadge from "../StatusBadge.tsx";
 import FlashTr, { type FlashHint } from "./FlashTr.tsx";
+import GroupHistory from "./GroupHistory.tsx";
 import LedgerTable from "./LedgerTable.tsx";
 import { money, shortDate } from "../../utils/format.ts";
 import { groupRateText, groupInterest } from "../../utils/grouping.ts";
@@ -91,6 +92,9 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, onEdit
       {expanded && (
         <tr className="bg-tint/60">
           <td colSpan={actions ? 9 : 8} className="px-4 py-3">
+            {/* The audit trail (Admin): who added / edited / released —
+                collapsed to a History icon until opened. */}
+            <GroupHistory groupId={g.groupId} />
             {/* Fixed widths + its own horizontal scroller: the ledger can
                 be as long as history demands without ever pushing or
                 shifting the columns of the table around it. */}

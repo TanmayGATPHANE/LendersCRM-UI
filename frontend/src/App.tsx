@@ -5,6 +5,7 @@ import Login from "./pages/Login.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import Customers from "./pages/Customers.tsx";
 import Users from "./pages/Users.tsx";
+import Activity from "./pages/Activity.tsx";
 import Cash from "./pages/Cash.tsx";
 import Reports from "./pages/Reports.tsx";
 import { currentUser } from "./api/client.ts";
@@ -59,6 +60,14 @@ export default function App() {
             element={
               <RequireRole role="Admin">
                 <Users />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/activity"
+            element={
+              <RequireRole role="Admin">
+                <Activity />
               </RequireRole>
             }
           />

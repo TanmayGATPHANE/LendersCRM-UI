@@ -44,16 +44,29 @@
    transform and opacity animate; reduced-motion users get a static card. */
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; }
 }
-.rise-in { animation: rise-in 0.5s var(--ease-brand) both; }
+/* Entrances use `backwards` (not `both`): their end state IS the natural
+   state, so once they finish the animation stops applying entirely and the
+   element returns to transform: none. A filled animation keeps a transform
+   computed forever in Chromium, which makes the element a permanent
+   stacking context — that buried z-indexed dropdowns (the row ⋮ menu)
+   under later rows / the sticky header, so clicks fell through to what was
+   painted on top. `backwards` still covers the delay phase. */
+.rise-in { animation: rise-in 0.5s var(--ease-brand) backwards; }
 
 /* ---- Motion library: one-shot entrances + ambient drift ----
    Everything animates only transform and opacity; all of it collapses
    to the final state under prefers-reduced-motion. */
+/* The `to` frame deliberately omits transform: with fill-mode: both the
+   final keyframe then resolves to the element's own `transform: none`, so
+   rows/tiles drop their stacking context once they land. (A kept
+   translateY(0) made every staggered <tr> a permanent stacking context,
+   burying the row's z-30 ⋮ dropdown under the rows BELOW it — clicks
+   fell through to those rows instead of the menu.) */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; }
 }
 @keyframes fade-in {
   from { opacity: 0; }
@@ -61,26 +74,26 @@
 }
 @keyframes pop-in {
   from { opacity: 0; transform: scale(0.96) translateY(4px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 1; }
 }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 1; }
 }
 @keyframes drift {
   0%, 100% { transform: translate(0, 0); }
   50%      { transform: translate(-18px, -26px); }
 }
-.anim-fade-up { animation: fade-up 0.5s var(--ease-brand) both; }
-.anim-fade-in { animation: fade-in 0.25s var(--ease-brand) both; }
-.anim-pop-in { animation: pop-in 0.2s var(--ease-brand) both; }
-.anim-toast-in { animation: toast-in 0.3s var(--ease-brand) both; }
+.anim-fade-up { animation: fade-up 0.5s var(--ease-brand) backwards; }
+.anim-fade-in { animation: fade-in 0.25s var(--ease-brand) backwards; }
+.anim-pop-in { animation: pop-in 0.2s var(--ease-brand) backwards; }
+.anim-toast-in { animation: toast-in 0.3s var(--ease-brand) backwards; }
 .anim-drift { animation: drift 11s var(--ease-brand) infinite; }
 .anim-drift-slow { animation: drift 17s var(--ease-brand) infinite reverse; }
 
 /* Staggered entrance for children (tiles, rows, menu blocks): each child
    rises 40ms after the previous one, capped so long lists never crawl. */
-.stagger > * { animation: fade-up 0.45s var(--ease-brand) both; }
+.stagger > * { animation: fade-up 0.45s var(--ease-brand) backwards; }
 .stagger > *:nth-child(2)  { animation-delay: 45ms; }
 .stagger > *:nth-child(3)  { animation-delay: 90ms; }
 .stagger > *:nth-child(4)  { animation-delay: 135ms; }
@@ -91,11 +104,25 @@
 .stagger > *:nth-child(9)  { animation-delay: 360ms; }
 .stagger > *:nth-child(n + 10) { animation-delay: 405ms; }
 
+/* ---- Chart entrances (Reports) ----
+   Columns rise from their baseline, horizontal bars grow from the left,
+   the net line draws itself, dots pop in — transform/opacity/stroke only,
+   all collapsed to the final state under prefers-reduced-motion. */
+@keyframes viz-rise { from { transform: scaleY(0); } }
+@keyframes viz-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes viz-pop  { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes viz-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.viz-rise { transform-box: fill-box; transform-origin: bottom; animation: viz-rise 0.6s var(--ease-brand) both; }
+.viz-grow { transform-box: fill-box; transform-origin: left; animation: viz-grow 0.7s var(--ease-brand) both; }
+.viz-pop  { transform-box: fill-box; transform-origin: center; animation: viz-pop 0.35s var(--ease-brand) both; }
+.viz-draw { animation: viz-draw 0.9s var(--ease-brand) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .anim-fade-up, .anim-fade-in, .anim-pop-in, .anim-toast-in,
   .anim-drift, .anim-drift-slow,
-  .stagger > * { animation: none; }
+  .stagger > *,
+  .viz-rise, .viz-grow, .viz-pop, .viz-draw { animation: none; }
 }
 
 /* Scroll containers that sit under the page (table bodies, modal bodies).

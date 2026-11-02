@@ -5,9 +5,10 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
+import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
+import { money } from "../utils/format.ts";
 
 /** Mock /api/users store — Admin seeds it with a couple of co-workers. */
 const mockUsers: UserItem[] = [
@@ -330,9 +331,19 @@ export async function mockReleaseGroup(
   cashLedger.push({ id: takeLedgerId(), date: dateReturned, amount: interestBack, source: "ReleaseInterest", groupId, referenceId: null, notes: null });
 }
 
-/** Mock GET /api/cash-ledger — every row, oldest first (the page re-sorts). */
-export function mockFetchCashLedger(): Promise<CashLedgerItem[]> {
-  return Promise.resolve([...cashLedger].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id));
+/** Mock GET /api/cash-ledger?from=&to= — the rows inside the inclusive
+    window (empty bounds = all time), oldest first (the page re-sorts). */
+export function mockFetchCashLedger(from?: string, to?: string): Promise<CashLedgerItem[]> {
+  return Promise.resolve(
+    [...cashLedger]
+      .filter((x) => (!from || x.date >= from) && (!to || x.date <= to))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+  );
+}
+
+/** Mock GET /api/cash-ledger/total — SUM over the whole ledger. */
+export function mockFetchCashTotal(): Promise<number> {
+  return Promise.resolve(cashLedger.reduce((s, x) => s + x.amount, 0));
 }
 
 /** Mock POST /api/cash-ledger — a manual ± movement; amount is signed. */
@@ -359,9 +370,9 @@ export function mockDeleteCashEntry(id: number): Promise<void> {
   });
 }
 
-/** Mock GET /api/reports/summary?year= — one money row per month of the
-    ledger, same slicing the backend does off the CashLedger table. */
-export function mockReportSummary(year?: number): Promise<SummaryRow[]> {
+/** Mock GET /api/reports/summary?from=&to= — one money row per month of
+    the ledger, same slicing the backend does off the CashLedger table. */
+export function mockReportSummary(from?: string, to?: string): Promise<SummaryRow[]> {
   return new Promise((resolve) => {
     const row = (month: string, rows: typeof cashLedger): SummaryRow => ({
       month,
@@ -374,7 +385,8 @@ export function mockReportSummary(year?: number): Promise<SummaryRow[]> {
     });
     const byMonth = new Map<string, typeof cashLedger>();
     for (const x of [...cashLedger].sort((a, b) => a.date.localeCompare(b.date))) {
-      if (year && Number(x.date.slice(0, 4)) !== year) continue;
+      if (from && x.date < from) continue;
+      if (to && x.date > to) continue;
       const m = x.date.slice(0, 7);
       if (!byMonth.has(m)) byMonth.set(m, []);
       byMonth.get(m)!.push(x);
@@ -385,11 +397,14 @@ export function mockReportSummary(year?: number): Promise<SummaryRow[]> {
 
 /** Mock GET /api/reports/customers — per-customer lifetime track record
     with the same formulas as CustomersAsync (partials + release legs). */
-export function mockReportCustomers(): Promise<CustomerReportRow[]> {
+export function mockReportCustomers(from?: string, to?: string): Promise<CustomerReportRow[]> {
   return new Promise((resolve) => {
     const today = new Date().toISOString().slice(0, 10);
+    const inWindow = entries.filter(
+      (e) => (!from || e.date >= from) && (!to || e.date <= to)
+    );
     const byCustomer = new Map<number, typeof entries>();
-    for (const e of entries) {
+    for (const e of inWindow) {
       if (!byCustomer.has(e.customerId)) byCustomer.set(e.customerId, []);
       byCustomer.get(e.customerId)!.push(e as typeof entries[number]);
     }
@@ -434,9 +449,11 @@ export function mockReportCustomers(): Promise<CustomerReportRow[]> {
 }
 
 /** Mock GET /api/reports/releases — one row per released collateral. */
-export function mockReportReleases(): Promise<ReleaseReportRow[]> {
+export function mockReportReleases(from?: string, to?: string): Promise<ReleaseReportRow[]> {
   return new Promise((resolve) => {
-    const released = entries.filter((e) => e.status === "Released");
+    const released = entries.filter(
+      (e) => e.status === "Released" && (!from || (e.releasedDate ?? "") >= from) && (!to || (e.releasedDate ?? "") <= to)
+    );
     const byGroup = new Map<number, typeof released>();
     for (const e of released) {
       if (!byGroup.has(e.groupId)) byGroup.set(e.groupId, []);
@@ -582,4 +599,50 @@ export function mockGlobalSearch(q: string): Promise<SearchResults> {
 
     resolve({ customers: customersOut, users: usersOut, transactions: [...lends, ...paymentsOut] });
   });
+}
+/** Mock GET /api/activity — the audit trail, synthesized from the sample
+    book (who "added" each lend/payment, "released" each collateral), so
+    the Activity tab and the history panels have something real to show
+    in demo mode. Newest first, filterable by user or group, like the API. */
+export function mockFetchActivity(userId?: number, groupId?: number): Promise<ActivityItem[]> {
+  const rows: ActivityItem[] = [];
+  let i = 1;
+  // The demo staff rotate deterministically, like the seed's counter.
+  const actorFor = (n: number) => (n % 4 === 3 ? mockUsers[1] : mockUsers[0]);
+
+  for (const e of entries) {
+    const who = actorFor(e.id);
+    const customer = customers.find((c) => c.id === e.customerId);
+    const at = new Date(`${e.date}T10:${String(e.id % 60).padStart(2, "0")}:00Z`).toISOString();
+    rows.push({
+      id: (i += 1), atUtc: at, userId: who.id, userName: who.name,
+      action: "Created", entity: "Entry", entityId: e.id, groupId: e.groupId,
+      details: `${e.groupId && e.groupId !== e.id ? "Added sub-lend" : "Added lend"} ${money(e.amount)} — ${e.item} for ${customer?.name ?? "?"}`,
+    });
+    if (e.status === "Released" && e.releasedDate) {
+      rows.push({
+        id: (i += 1),
+        atUtc: new Date(`${e.releasedDate}T16:${String(e.id % 60).padStart(2, "0")}:00Z`).toISOString(),
+        userId: who.id, userName: who.name,
+        action: "Released", entity: "Group", entityId: e.groupId, groupId: e.groupId,
+        details: `Released collateral — ${e.item} (${customer?.name ?? "?"}) collected ${money(e.amountReturned ?? e.amount)}`,
+      });
+    }
+  }
+  for (const p of partials) {
+    const who = actorFor(p.id + 2);
+    const group = entries.find((e) => e.groupId === p.groupId);
+    rows.push({
+      id: (i += 1),
+      atUtc: new Date(`${p.date}T13:${String(p.id % 60).padStart(2, "0")}:00Z`).toISOString(),
+      userId: who.id, userName: who.name,
+      action: "Created", entity: "Payment", entityId: p.id, groupId: p.groupId,
+      details: `Recorded partial return ${money(p.amount)} — ${group?.item ?? `group #${p.groupId}`}`,
+    });
+  }
+  return Promise.resolve(
+    rows
+      .filter((r) => (!groupId || r.groupId === groupId) && (!userId || r.userId === userId))
+      .sort((a, b) => b.atUtc.localeCompare(a.atUtc) || b.id - a.id)
+  );
 }

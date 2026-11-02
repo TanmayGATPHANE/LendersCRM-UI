@@ -5,6 +5,7 @@ import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
 import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
+import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
 import { primaryBtnCls, secondaryBtnCls, inputCls, selectCls } from "../components/ui.ts";
@@ -40,8 +41,10 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<EntryFilter>("Active"); // daily work = active lends
   const [view, setView] = useState<"Groups" | "Grid">("Groups"); // Groups = ledger rows; Grid = spreadsheet
-  const [month, setMonth] = useState("all"); // month of the first lend
-  const [year, setYear] = useState("all"); // year of the first lend
+  // Month + year of the first lend open on the CURRENT month — the work
+  // in front of the counter today; the dropdowns widen or clear them.
+  const [month, setMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, "0"));
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
 
   // Which dialogs are open: group being released, entry being edited,
   // group receiving a sub-lend or a partial return, or a plain Add Entry.
@@ -72,6 +75,10 @@ export default function Dashboard() {
     focusApplied.current = fg;
     setFilter("All");
     setView("Groups");
+    // The month/year filters default to today — a focused collateral from
+    // an older month must not be filtered out of view while it is found.
+    setMonth("all");
+    setYear("all");
     setSearch(owner.customerName);
   }, [location.state, entries]);
 
@@ -179,10 +186,10 @@ export default function Dashboard() {
     }
   }
 
-  // The years any record falls in — feeds the year dropdown (nearest
-  // refresh button); defaults to "all".
+  // The years any record falls in — feeds the year dropdown; the current
+  // year always sits in the list (the default filter), even on a fresh book.
   const years = useMemo(() => {
-    const ys = new Set<string>();
+    const ys = new Set<string>([String(new Date().getFullYear())]);
     for (const e of entries) if (e.date) ys.add(e.date.slice(0, 4));
     for (const p of partials) if (p.date) ys.add(p.date.slice(0, 4));
     return [...ys].sort().reverse();
@@ -202,6 +209,12 @@ export default function Dashboard() {
     }),
     [entries, partials, search, filter, month, year]
   );
+
+  // Paged rendering — 50 groups at a time (scroll or "Show more"), so a
+  // 1,000-customer book lays out only the slice in view. The Add Entry
+  // suggestions below still see the FULL filtered list.
+  const [visibleGroups, moreGroups] = useChunkedRows(shown.length);
+  const paged = shown.slice(0, visibleGroups);
 
   /** One ⋮-menu action on a collateral-group row (shape the shared
       DotsMenu/EntryGroupTable expect). */
@@ -325,18 +338,19 @@ export default function Dashboard() {
       {view === "Groups" ? (
         <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <EntryGroupTable
-            groups={shown}
+            groups={paged}
             actions={canEdit() ? actionsFor : undefined}
             onEditEntry={setEditing} // edit one lend (row ⋮ Edit, or a sub-lend here)
             flash={flash}
           />
+          <LoadMore visible={visibleGroups} total={shown.length} onMore={moreGroups} />
         </div>
       ) : (
         // Flat grid — same data, one row per lend, sorted by customer,
         // every data column editable in the cell.
         <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <GridTable
-            groups={shown}
+            groups={paged}
             customers={customers}
             readOnly={!canEdit()}
             flash={flash}
@@ -344,6 +358,7 @@ export default function Dashboard() {
             onPaymentUpdate={(id, patch) => patchRow("payment", id, patch)}
             onCustomerMove={moveGroup}
           />
+          <LoadMore visible={visibleGroups} total={shown.length} onMore={moreGroups} />
         </div>
       )}
 

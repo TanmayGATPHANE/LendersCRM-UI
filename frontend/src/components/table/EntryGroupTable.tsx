@@ -4,6 +4,7 @@ import type { MenuItem } from "../DotsMenu.tsx";
 import DotsMenu from "../DotsMenu.tsx";
 import StatusBadge from "../StatusBadge.tsx";
 import { Field } from "../Field.tsx";
+import GroupHistory from "./GroupHistory.tsx";
 import GroupRow from "./GroupRow.tsx";
 import type { FlashHint } from "./FlashTr.tsx";
 import { money, shortDate } from "../../utils/format.ts";
@@ -189,8 +190,14 @@ function GroupCard({ group: g, expanded, onToggle, actions, onEditEntry }: {
         )}
       </div>
 
-      {/* Expanded: the same passbook the desktop row reveals */}
-      {expanded && <MobileLedger group={g} onEditEntry={onEditEntry} />}
+      {/* Expanded: the audit trail (Admin) + the passbook the desktop
+          row reveals */}
+      {expanded && (
+        <>
+          <GroupHistory groupId={g.groupId} />
+          <MobileLedger group={g} onEditEntry={onEditEntry} />
+        </>
+      )}
     </div>
   );
 }

@@ -14,14 +14,14 @@ import {
   mockLogin, mockFetchCustomers, mockAddCustomer, mockUpdateCustomer,
   mockEnsureCustomer, mockFetchEntries, mockFetchPartials, mockFetchInsights,
   mockAddPartial, mockAddEntry, mockUpdateEntry, mockUpdatePartial,
-  mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger,
+  mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger, mockFetchCashTotal,
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
   mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
-  mockReportReleases,
+  mockReportReleases, mockFetchActivity,
 } from "./mockApi.ts";
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
-  SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow,
+  SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, ActivityItem,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -50,6 +50,12 @@ export function setUser(user: AppUser | null): void {
 export function canEdit(): boolean {
   const role = currentUser()?.role;
   return role === "Admin" || role === "Lender";
+}
+
+/** Only the Admin sees the audit trail: the Activity tab and the
+    per-collateral history panel both ride the Admin-only endpoint. */
+export function isAdmin(): boolean {
+  return currentUser()?.role === "Admin";
 }
 
 /** One fetch with the stored JWT attached; errors surface as Error(msg)
@@ -101,9 +107,13 @@ interface DataLayer {
   fetchGlobalSearch(q: string): Promise<SearchResults>;
 
   // The Total Cash Available table (§3.5) — every rupee in hand as stored
-  // rows. Manual ± entries are the only rows a user can add or delete;
-  // the lending rows are posted by the backend with the books.
-  fetchCashLedger(): Promise<CashLedgerItem[]>;
+  // rows. The list takes an optional inclusive LedgerDate window so the
+  // page pulls only the slice it shows; the total is always SUM over the
+  // WHOLE table (the real cash in hand, window-independent). Manual ±
+  // entries are the only rows a user can add or delete; the lending rows
+  // are posted by the backend with the books.
+  fetchCashLedger(from?: string, to?: string): Promise<CashLedgerItem[]>;
+  fetchCashTotal(): Promise<number>;
   addManualCash(values: { date: string; amount: number; notes: string }): Promise<CashLedgerItem>;
   deleteCashEntry(id: number): Promise<void>;
 
@@ -128,10 +138,17 @@ interface DataLayer {
   addUser(values: { name: string; email: string; password: string; role: Role }): Promise<UserItem>;
   updateUser(id: number, patch: { name?: string; role?: Role; isActive?: boolean; password?: string }): Promise<UserItem>;
 
-  // The Reports page (§3.6) — read-only, all rows backend-computed.
-  fetchReportSummary(year?: number): Promise<SummaryRow[]>;
-  fetchReportCustomers(): Promise<CustomerReportRow[]>;
-  fetchReportReleases(): Promise<ReleaseReportRow[]>;
+  // The Reports page (§3.6) — read-only, all rows backend-computed. The
+  // window (`from`/`to`, ISO dates, inclusive) is the page's global
+  // calendar; nulls mean all time.
+  fetchReportSummary(from?: string, to?: string): Promise<SummaryRow[]>;
+  fetchReportCustomers(from?: string, to?: string): Promise<CustomerReportRow[]>;
+  fetchReportReleases(from?: string, to?: string): Promise<ReleaseReportRow[]>;
+
+  // The audit trail (§10) — Admin only at the controller. userId filters
+  // the Activity tab to one user's trail; groupId pulls everything that
+  // happened on one collateral group (the expanded-row history panel).
+  fetchActivity(userId?: number, groupId?: number): Promise<ActivityItem[]>;
 }
 
 /** The real backend, one entry per endpoint in plan §6 — same function
@@ -170,7 +187,10 @@ const api: DataLayer = {
 
   fetchGlobalSearch: (q) => http<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
 
-  fetchCashLedger: () => http<CashLedgerItem[]>("/api/cash-ledger"),
+  fetchCashLedger: (from, to) =>
+    http<CashLedgerItem[]>(`/api/cash-ledger?${reportWindowQuery(from, to)}`),
+
+  fetchCashTotal: () => http<number>("/api/cash-ledger/total"),
 
   addManualCash: ({ date, amount, notes }) =>
     http<CashLedgerItem>("/api/cash-ledger", {
@@ -238,13 +258,32 @@ const api: DataLayer = {
   updateUser: (id, patch) =>
     http<UserItem>(`/api/users/${id}`, { method: "PUT", body: patch }),
 
-  fetchReportSummary: (year) =>
-    http<SummaryRow[]>(`/api/reports/summary${year ? `?year=${year}` : ""}`),
+  fetchReportSummary: (from, to) =>
+    http<SummaryRow[]>(`/api/reports/summary?${reportWindowQuery(from, to)}`),
 
-  fetchReportCustomers: () => http<CustomerReportRow[]>("/api/reports/customers"),
+  fetchReportCustomers: (from, to) =>
+    http<CustomerReportRow[]>(`/api/reports/customers?${reportWindowQuery(from, to)}`),
 
-  fetchReportReleases: () => http<ReleaseReportRow[]>("/api/reports/releases"),
+  fetchReportReleases: (from, to) =>
+    http<ReleaseReportRow[]>(`/api/reports/releases?${reportWindowQuery(from, to)}`),
+
+  fetchActivity: (userId, groupId) => {
+    const p = new URLSearchParams();
+    if (userId) p.set("userId", String(userId));
+    if (groupId) p.set("groupId", String(groupId));
+    const qs = p.toString();
+    return http<ActivityItem[]>(`/api/activity${qs ? `?${qs}` : ""}`);
+  },
 };
+
+/** Query string for the windows (reports calendar, cash-ledger window) —
+    empty when unbounded. */
+function reportWindowQuery(from?: string, to?: string): string {
+  const p = new URLSearchParams();
+  if (from) p.set("from", from);
+  if (to) p.set("to", to);
+  return p.toString();
+}
 
 /** The mock pair — same names, so the switch below is a pure toggle. */
 const mock: DataLayer = {
@@ -262,6 +301,7 @@ const mock: DataLayer = {
   fetchInsights: mockFetchInsights,
   fetchGlobalSearch: mockGlobalSearch,
   fetchCashLedger: mockFetchCashLedger,
+  fetchCashTotal: mockFetchCashTotal,
   addManualCash: mockAddManualCash,
   deleteCashEntry: mockDeleteCashEntry,
   addPartial: mockAddPartial,
@@ -276,6 +316,7 @@ const mock: DataLayer = {
   fetchReportSummary: mockReportSummary,
   fetchReportCustomers: mockReportCustomers,
   fetchReportReleases: mockReportReleases,
+  fetchActivity: mockFetchActivity,
 };
 
 const impl: DataLayer = USE_MOCK ? mock : api;
@@ -290,7 +331,9 @@ export const fetchEntries = () => impl.fetchEntries();
 export const fetchPartials = () => impl.fetchPartials();
 export const fetchInsights = (tab?: string) => impl.fetchInsights(tab);
 export const fetchGlobalSearch = (q: string) => impl.fetchGlobalSearch(q);
-export const fetchCashLedger = () => impl.fetchCashLedger();
+export const fetchCashLedger = (from?: string, to?: string) => impl.fetchCashLedger(from, to);
+export const fetchCashTotal = () => impl.fetchCashTotal();
+export const fetchActivity = (userId?: number, groupId?: number) => impl.fetchActivity(userId, groupId);
 export const addManualCash =
   (values: { date: string; amount: number; notes: string }) => impl.addManualCash(values);
 export const deleteCashEntry = (id: number) => impl.deleteCashEntry(id);
@@ -312,6 +355,6 @@ export const releaseGroup = (groupId: number, values: Parameters<DataLayer["rele
 export const fetchUsers = () => impl.fetchUsers();
 export const addUser = (values: { name: string; email: string; password: string; role: Role }) => impl.addUser(values);
 export const updateUser = (id: number, patch: { name?: string; role?: Role; isActive?: boolean; password?: string }) => impl.updateUser(id, patch);
-export const fetchReportSummary = (year?: number) => impl.fetchReportSummary(year);
-export const fetchReportCustomers = () => impl.fetchReportCustomers();
-export const fetchReportReleases = () => impl.fetchReportReleases();
+export const fetchReportSummary = (from?: string, to?: string) => impl.fetchReportSummary(from, to);
+export const fetchReportCustomers = (from?: string, to?: string) => impl.fetchReportCustomers(from, to);
+export const fetchReportReleases = (from?: string, to?: string) => impl.fetchReportReleases(from, to);

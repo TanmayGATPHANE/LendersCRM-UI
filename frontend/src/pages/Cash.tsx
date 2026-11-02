@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addManualCash, canEdit, deleteCashEntry, fetchCashLedger, fetchEntries,
+  addManualCash, canEdit, deleteCashEntry, fetchCashLedger, fetchCashTotal, fetchEntries,
 } from "../api/client.ts";
 import type { CashLedgerItem, Entry } from "../api/types.ts";
 import CashEntryDialog from "../components/dialogs/CashEntryDialog.tsx";
+import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
-import { money, shortDate } from "../utils/format.ts";
+import { currentMonthWindow, money, shortDate } from "../utils/format.ts";
 import { toast } from "../components/Toast.tsx";
 
 /**
@@ -14,8 +15,13 @@ import { toast } from "../components/Toast.tsx";
  * counter is a stored row. A LEND posts one negative row the day the
  * money goes out; a release posts TWO rows on release day — principal
  * received and interest collected; a partial return posts one; a manual
- * +/− movement outside the business posts one signed row. SUM(amount) is
- * the total, which always ties to the dashboard tile and the database.
+ * +/− movement outside the business posts one signed row.
+ *
+ * The calendar opens on the CURRENT MONTH (from/to can widen or clear
+ * it). The list itself is paged — rows load 50 at a time so a year of
+ * counter activity never lays itself all out at once; the window sum,
+ * and "in hand" (SUM over the whole table, from its own endpoint), are
+ * always whole-window figures, not the displayed page's.
  */
 
 /** What the Source column says for each stored row kind. */
@@ -41,17 +47,31 @@ export default function Cash() {
   const [ledger, setLedger] = useState<CashLedgerItem[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
+  // The calendar opens on the current month — clearing or widening it is
+  // one click; empty dates mean all time.
+  const [from, setFrom] = useState(currentMonthWindow().from);
+  const [to, setTo] = useState(currentMonthWindow().to);
+  // SUM(Amount) over the whole CashLedger table — the dashboard's number,
+  // from its own endpoint so the window above never fakes it smaller.
+  const [inHand, setInHand] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   async function refresh() {
-    const [rows, es] = await Promise.all([fetchCashLedger(), fetchEntries()]);
+    const [rows, es, cashInHand] = await Promise.all([
+      // Only the calendar's slice comes over the wire; "in hand" is the
+      // whole-book SUM from its own endpoint.
+      fetchCashLedger(from || undefined, to || undefined), fetchEntries(), fetchCashTotal(),
+    ]);
     setLedger(rows);
     setEntries(es);
+    setInHand(cashInHand);
   }
 
+  // The window refetches its slice from the server; the search box
+  // stays client-side over what is already loaded.
   useEffect(() => {
     refresh();
-  }, []);
+  }, [from, to]);
 
   /** Delete one manual movement (a corrected mistake). */
   async function removeEntry(id: number, notes: string) {
@@ -92,24 +112,36 @@ export default function Cash() {
       ); // newest day first; within one day the id keeps book order
   }, [ledger, entries]);
 
-  // Search over the source text, who paid and the notes.
+  // Search over the source text, who paid and the notes; the calendar
+  // (from/to, inclusive) scopes the window. Both are view filters.
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(
-      (r) => !q || `${r.label} ${r.who} ${r.notes}`.toLowerCase().includes(q)
+      (r) =>
+        (!q || `${r.label} ${r.who} ${r.notes}`.toLowerCase().includes(q)) &&
+        (!from || r.date >= from) &&
+        (!to || r.date <= to)
     );
-  }, [rows, search]);
+  }, [rows, search, from, to]);
 
-  // The filter applies to the view only — the real Total Cash Available
-  // is SUM(Amount) over the whole table (the backend's insights tile).
+  // The filters apply to the view only — the real Total Cash Available
+  // is SUM(Amount) over the whole table (the backend's insights tile),
+  // shown as "in hand"; the filtered sum is labelled per-window.
   const total = shown.reduce((s, r) => s + r.amount, 0);
+  const grandTotal = inHand ?? 0;
+  const windowed = Boolean(from || to);
+
+  // Paged rendering: 50 rows, growing by chunks (scroll or button),
+  // so 2,000 ledger rows never render at once.
+  const [visible, moreRows] = useChunkedRows(shown.length);
+  const visibleRows = shown.slice(0, visible);
 
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
   const thR = `${th} text-right`;
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Toolbar: search on the left, running total on the right */}
+      {/* Toolbar: search + calendar on the left, running total on the right */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <div className="min-w-44 max-w-xs flex-1">
           <input
@@ -119,10 +151,43 @@ export default function Cash() {
             className={inputCls}
           />
         </div>
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-card px-2 py-1.5">
+          <i className="ph ph-calendar-blank text-base text-dim" aria-hidden="true" />
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="From date"
+            title="From date (inclusive)"
+            className="w-32 bg-transparent text-sm text-slate outline-none"
+          />
+          <span className="text-xs text-muted">to</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="To date"
+            title="To date (inclusive)"
+            className="w-32 bg-transparent text-sm text-slate outline-none"
+          />
+          {(from || to) && (
+            <button
+              onClick={() => { setFrom(""); setTo(""); }}
+              title="Clear dates — all time"
+              className="cursor-pointer text-dim hover:text-slate transition-colors duration-300 ease-brand
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+            >
+              <i className="ph ph-x text-sm" aria-hidden="true" />
+            </button>
+          )}
+        </div>
         <div className="flex-1" />
         <span className="text-sm text-muted">
           {shown.length} {shown.length === 1 ? "entry" : "entries"} ·{" "}
-          <b className="text-ink">{money(total)}</b> in hand
+          <b className="text-ink">{money(total)}</b>
+          {windowed ? " in window" : ""} · {money(grandTotal)} in hand
         </span>
         {canEdit() && (
           <button onClick={() => setAddOpen(true)} className={primaryBtnCls}>
@@ -135,7 +200,7 @@ export default function Cash() {
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {/* Mobile: one card per money movement */}
         <div className="stagger space-y-2 p-3 md:hidden">
-          {shown.map((r) => {
+          {visibleRows.map((r) => {
             const manual = r.row.source === "Manual";
             const signed = manual || r.row.source === "Lend";
             return (
@@ -199,7 +264,7 @@ export default function Cash() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {shown.map((r) => {
+            {visibleRows.map((r) => {
               const manual = r.row.source === "Manual";
               // Money out (lends, manual −) always shows its sign in red;
               // manual + shows green. Lending rows are never green-signed.
@@ -263,6 +328,11 @@ export default function Cash() {
             )}
           </tbody>
         </table>
+
+        {/* The paged footer — BELOW the table, so on desktop it sits at
+            the end of the scrolled content (an auto-load observer above
+            the rows would fire on mount and drain the whole page). */}
+        <LoadMore visible={visible} total={shown.length} onMore={moreRows} />
       </div>
 
       <CashEntryDialog

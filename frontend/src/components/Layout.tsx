@@ -14,6 +14,7 @@ const TITLES: Record<string, string> = {
   "/cash": "Cash",
   "/reports": "Reports",
   "/users": "Users",
+  "/activity": "Activity",
 };
 
 /**
@@ -122,7 +123,13 @@ export default function Layout() {
               <i className={`${iconCls} ph-chart-bar`} aria-hidden="true" />
               Reports
             </NavLink>
-            {/* Admin-only page */}
+            {/* Admin-only pages */}
+            {user?.role === "Admin" && (
+              <NavLink to="/activity" className={linkClass}>
+                <i className={`${iconCls} ph-clock-counter-clockwise`} aria-hidden="true" />
+                Activity
+              </NavLink>
+            )}
             {user?.role === "Admin" && (
               <NavLink to="/users" className={linkClass}>
                 <i className={`${iconCls} ph-identification-card`} aria-hidden="true" />
