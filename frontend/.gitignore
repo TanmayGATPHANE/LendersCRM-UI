@@ -2,8 +2,11 @@
 # never committed; only src/ + config travel with the repo.
 
 node_modules/
-dist/            # `npm run build` output
-*.tsbuildinfo    # tsc incremental-cache
+
+# build output (inline comments are NOT valid .gitignore syntax — they
+# quietly broke these two patterns before, which is how dist/ got committed)
+dist/
+*.tsbuildinfo
 
 # local env files (may hold VITE_API_URL or tokens)
 .env.local
