@@ -1,6 +1,6 @@
 import { useState, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { login, currentUser, setUser } from "../api/client.ts";
+import { login, currentUser, setUser, API_MODE } from "../api/client.ts";
 import { inputCls, labelCls } from "../components/ui.ts";
 
 /**
@@ -203,6 +203,29 @@ export default function Login() {
               {busy ? "Signing in" : "Sign in"}
             </button>
           </form>
+
+          {/* Which data source this build uses — makes "is it talking to
+              the API or still mocking?" visible at one glance. Amber =
+              mock (VITE_USE_MOCK=1 was compiled in); green = the real
+              API, with the base URL it will call. */}
+          <p className="stagger mt-3 flex items-center justify-center gap-1.5">
+            <span
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                API_MODE.mock ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"
+              }`}
+              title={API_MODE.mock
+                ? "This build shows sample data (VITE_USE_MOCK=1 was set at build time)"
+                : `This build calls the real API at ${API_MODE.base}`}
+            >
+              <i
+                className={`ph ${API_MODE.mock ? "ph-flask" : "ph-broadcast"} text-sm shrink-0`}
+                aria-hidden="true"
+              />
+              {API_MODE.mock
+                ? "Demo data (mock mode)"
+                : <span className="block truncate">{API_MODE.base}</span>}
+            </span>
+          </p>
 
           <p className="mt-6 text-center text-xs text-pretty text-muted">
             Internal system. Accounts are created by administrators.

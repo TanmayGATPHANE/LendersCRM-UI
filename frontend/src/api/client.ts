@@ -27,6 +27,14 @@ import type {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
 const BASE: string = import.meta.env.VITE_API_URL ?? "http://localhost:5246";
 
+/** Which data source THIS build was compiled to talk to — the login page
+    badges it, so "why is my login failing" starts with one glance: mock
+    mode still on (VITE_USE_MOCK=1) vs. the API base it was pointed at. */
+export const API_MODE = {
+  mock: USE_MOCK,
+  base: BASE,
+};
+
 const TOKEN_KEY = "ams_user";
 
 /** Read the currently signed-in user (null = not signed in). */
