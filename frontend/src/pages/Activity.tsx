@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchActivity, fetchUsers } from "../api/client.ts";
 import type { ActivityItem, UserItem } from "../api/types.ts";
+import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
+import useDateRange from "../utils/useDateRange.ts";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { selectCls } from "../components/ui.ts";
 
@@ -9,7 +11,11 @@ import { selectCls } from "../components/ui.ts";
  * return, release, cash movement and account change the system has
  * recorded, newest first. Each row says WHO did it (the name was
  * snapshotted at write time), WHEN, and a plain sentence about WHAT moved.
- * The dropdown narrows it to one user's trail.
+ * The dropdown narrows it to one user's trail; the date-range picker
+ * narrows it to a slice of time — it opens on ALL TIME (the trail had no
+ * window before, so opening it must still show everything), filtered
+ * client-side on each row's local date (the same axis the "When" cell
+ * renders).
  */
 
 /** Chip color per action verb — red stays reserved for deletions. */
@@ -32,6 +38,11 @@ export default function Activity() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [userId, setUserId] = useState<string>("all");
   const [loading, setLoading] = useState(true);
+  // Date-range slice of the trail — the endpoint has no date window, so
+  // it filters client-side (opens on ALL TIME, not a preset window, so a
+  // check of the books sees history right away).
+  const { selected, range, applyCustom } =
+    useDateRange("ams-activity-range", "All time");
 
   // The trail refetches whenever the user filter changes; one admin-only
   // endpoint serves the whole row and the filter is a query param.
@@ -49,16 +60,27 @@ export default function Activity() {
     fetchUsers().then(setUsers).catch(() => { /* the trail itself still shows */ });
   }, []);
 
+  // Same time axis as the rows' own "When" rendering — the row's LOCAL
+  // date inside the confirmed range, inclusive both ends. The user and
+  // range filters stack (both can be active at once).
+  const shown = useMemo(() => {
+    const from = fmtISO(range.start), to = fmtISO(range.end);
+    return rows.filter((r) => {
+      const d = fmtISO(new Date(r.atUtc));
+      return d >= from && d <= to;
+    });
+  }, [rows, range]);
+
   // Paged rendering — 50 rows at a time (scroll or "Show more"), like the
   // other long tables.
-  const [visible, more] = useChunkedRows(rows.length);
-  const page = useMemo(() => rows.slice(0, visible), [rows, visible]);
+  const [visible, more] = useChunkedRows(shown.length);
+  const page = useMemo(() => shown.slice(0, visible), [shown, visible]);
 
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Toolbar: the who-filter on the left, the count on the right */}
+      {/* Toolbar: who + date range on the left, the filtered count on the right */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <h1 className="text-lg font-semibold text-ink">User Activity</h1>
         <select value={userId} onChange={(e) => setUserId(e.target.value)}
@@ -68,9 +90,12 @@ export default function Activity() {
             <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
           ))}
         </select>
+        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
         <div className="flex-1" />
         <span className="text-sm text-muted">
-          {loading ? "Loading…" : `${rows.length} ${rows.length === 1 ? "event" : "events"}`}
+          {loading ? "Loading…"
+            : `${shown.length} ${shown.length === 1 ? "event" : "events"}`
+              + (selected !== "All time" ? " in window" : "")}
         </span>
       </div>
 
@@ -92,9 +117,11 @@ export default function Activity() {
               <p className="mt-2 text-xs text-slate">{r.details}</p>
             </div>
           ))}
-          {!loading && rows.length === 0 && (
+          {!loading && shown.length === 0 && (
             <p className="py-10 text-center text-sm text-muted">
-              Nothing recorded yet — actions land here as the books change.
+              {selected !== "All time"
+                ? "No events in this window — widen the date range."
+                : "Nothing recorded yet — actions land here as the books change."}
             </p>
           )}
         </div>
@@ -121,17 +148,19 @@ export default function Activity() {
                 <td className="px-3 py-2 text-slate">{r.details}</td>
               </tr>
             ))}
-            {!loading && rows.length === 0 && (
+            {!loading && shown.length === 0 && (
               <tr>
                 <td colSpan={4} className="hidden px-3 py-12 text-center text-sm text-muted md:table-cell">
-                  Nothing recorded yet — actions land here as the books change.
+                  {selected !== "All time"
+                    ? "No events in this window — widen the date range."
+                    : "Nothing recorded yet — actions land here as the books change."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
 
-        <LoadMore visible={visible} total={rows.length} onMore={more} />
+        <LoadMore visible={visible} total={shown.length} onMore={more} />
       </div>
     </main>
   );

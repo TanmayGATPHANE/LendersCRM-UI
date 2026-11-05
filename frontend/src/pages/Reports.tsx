@@ -3,10 +3,10 @@ import {
   fetchReportCustomers, fetchReportReleases, fetchReportSummary,
 } from "../api/client.ts";
 import type { CustomerReportRow, ReleaseReportRow, SummaryRow } from "../api/types.ts";
-import { currentMonthWindow, money } from "../utils/format.ts";
-import { inputCls } from "../components/ui.ts";
+import { money } from "../utils/format.ts";
 import { toast } from "../components/Toast.tsx";
-import Dumbbell from "../components/viz/Dumbbell.tsx";
+import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
+import useDateRange from "../utils/useDateRange.ts";
 import NetLine from "../components/viz/NetLine.tsx";
 import RankedBars from "../components/viz/RankedBars.tsx";
 import TrendColumns from "../components/viz/TrendColumns.tsx";
@@ -27,51 +27,63 @@ import ReleasedTable from "../components/reports/ReleasedTable.tsx";
  *   Customers — per-customer lifetime track record (CustomersTable.tsx).
  *   Released  — per-released-collateral outcome (ReleasedTable.tsx).
  *
- * This page owns only: the tab switcher, the global calendar (from/to)
- * that scopes every tab, the fetches, and the small chart shims that
+ * This page owns only: the tab switcher, the global date-range picker
+ * (calendar button + popover) that scopes every tab, the fetches, and the
+ * small chart shims that
  * reshape the same rows the tables show. The three tables live in
  * components/reports/ — one file each.
  *
- * The calendar opens on the CURRENT MONTH so a year-sized book never
- * loads itself on entry (clear it for all time). Charts collapse to
+ * The range opens on THIS MONTH so a year-sized book never
+ * loads itself on entry (the sidebar's All time widens it). Charts collapse
+ * to
  * their headers by default so the data table is the first thing you
  * reach; every chart's numbers are also in the table right below it —
- * the tooltip enhances, it never gates.
+ * the tooltip enhances, it never gates. The Released tab has no chart —
+ * its table alone carries the lent/recovered facts.
  */
 
-/** The Summary tab first — the year filter sits beside it. */
+/** The Summary tab first — the range picker sits beside it. */
 const TABS = ["Summary", "Customers", "Released"] as const;
 type ReportTab = (typeof TABS)[number];
 
 export default function Reports() {
   const [tab, setTab] = useState<ReportTab>("Summary");
 
-  // Each tab fetches lazily and keeps its rows; the global calendar
-  // (from/to, inclusive) re-runs the active tab's fetch. Empty = all time.
+  // Each tab fetches lazily and keeps its rows; the global date-range
+  // picker re-runs the active tab's fetch. All time = the whole book.
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [customers, setCustomers] = useState<CustomerReportRow[]>([]);
   const [releases, setReleases] = useState<ReleaseReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  // The calendar opens on the current month; clears to all time.
-  const [from, setFrom] = useState(currentMonthWindow().from);
-  const [to, setTo] = useState(currentMonthWindow().to);
+  // One shared open/closed state for every chart card on the page —
+  // expanding one expands all of them (Summary's two charts move
+  // together), collapsing one collapses all. Starts collapsed, like the
+  // cards' own default.
+  const [chartsOpen, setChartsOpen] = useState(false);
+  // The range opens on This month (the page's default); the picker's
+  // state contract (selection + confirmed window) is persisted per page.
+  const { selected, range, applyCustom } =
+    useDateRange("ams-reports-range", "This month");
 
   useEffect(() => {
     let live = true;
     setLoading(true);
+    // The picker gives full-day bounds — DATE data wants local ISO days,
+    // exactly what the backend's from/to (inclusive) slice.
+    const from = fmtISO(range.start), to = fmtISO(range.end);
     const p =
       tab === "Summary"
-        ? fetchReportSummary(from || undefined, to || undefined).then(setSummary)
+        ? fetchReportSummary(from, to).then(setSummary)
         : tab === "Customers"
-          ? fetchReportCustomers(from || undefined, to || undefined).then(setCustomers)
-          : fetchReportReleases(from || undefined, to || undefined).then(setReleases);
+          ? fetchReportCustomers(from, to).then(setCustomers)
+          : fetchReportReleases(from, to).then(setReleases);
     p.catch((e: unknown) => toast((e as Error).message))
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [tab, from, to]);
+  }, [tab, range]);
 
   // Chart derivations — the same rows the tables get below, reshaped for
-  // each picture. The calendar above scopes both, so chart and table
+  // each picture. The filter above scopes both, so chart and table
   // always agree on which slice of the books they show.
   const trend = summary.map((r, i) => ({
     label: monthLabel(r.month),
@@ -94,14 +106,9 @@ export default function Reports() {
       value: c.activeOutstanding,
       detail: `${c.lends} lends (${c.activeLends} active) · lent ${money(c.totalLent)}`,
     }));
-  // The dumbbell stays bounded no matter how many books closed — the
-  // latest twelve releases headline the chart; the table below holds all.
-  const dumbbellRows = releases.slice(0, 12).map((r) => ({
-    name: `${r.item} · ${r.customer}`,
-    lent: r.lent,
-    recovered: r.recoveredPrincipal,
-    detail: `Interest ${money(r.interestCollected)} · ${r.daysHeld} days held`,
-  }));
+  // The dumbbell chart was removed from the Released tab — the Released
+  // table below carries the same facts (lent, recovered, interest, days
+  // held) as plain rows.
 
   const tabHint: Record<ReportTab, string> = {
     Summary: "Money in and out, month by month — straight from the cash ledger.",
@@ -109,12 +116,11 @@ export default function Reports() {
     Released: "What each released collateral brought back, and how long the money was out.",
   };
 
-  const dateInputCls = `${inputCls} px-2 py-1.5 text-sm`;
-
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Toolbar: report tabs on the left; the global calendar on the right
-          scopes every tab — charts and tables, one window on the books. */}
+      {/* Toolbar: report tabs on the left; the date-range picker (presets
+          + custom window) on the right scopes every tab — charts and
+          tables, one window on the books. */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <div className="flex rounded-lg border border-line bg-card p-0.5">
           {TABS.map((t) => (
@@ -132,41 +138,10 @@ export default function Reports() {
         </div>
         <span className="text-sm text-muted">{tabHint[tab]}</span>
         <div className="flex-1" />
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-card px-2 py-1.5">
-          <i className="ph ph-calendar-blank text-base text-dim" aria-hidden="true" />
-          <input
-            type="date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => setFrom(e.target.value)}
-            aria-label="From date"
-            title="From date (inclusive)"
-            className={`${dateInputCls} bg-transparent`}
-          />
-          <span className="text-xs text-muted">to</span>
-          <input
-            type="date"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => setTo(e.target.value)}
-            aria-label="To date"
-            title="To date (inclusive)"
-            className={`${dateInputCls} bg-transparent`}
-          />
-          {(from || to) && (
-            <button
-              onClick={() => { setFrom(""); setTo(""); }}
-              title="Clear dates — all time"
-              className="cursor-pointer text-dim hover:text-slate transition-colors duration-300 ease-brand
-                         focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
-            >
-              <i className="ph ph-x text-sm" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
       </div>
 
-      {/* Charts + the report — one scroll column; the calendar above scopes
+      {/* Charts + the report — one scroll column; the filter above scopes
           both, the charts collapse to their headers by default so the data
           is the first thing on the page, and the report box keeps its own
           (sticky-headered) scroll under a cap so long books never push. */}
@@ -175,6 +150,8 @@ export default function Reports() {
           <div className="grid shrink-0 gap-3 lg:grid-cols-2">
             <ChartCard
               defaultCollapsed
+              open={chartsOpen}
+              onToggle={setChartsOpen}
               title="Money in vs out"
               subtitle="Lend out against everything collected, month by month (₹)"
               legend={
@@ -188,7 +165,7 @@ export default function Reports() {
             >
               <TrendColumns data={trend} />
             </ChartCard>
-            <ChartCard defaultCollapsed title="Net cash by month" subtitle="What the month's movement left in hand (₹)">
+            <ChartCard defaultCollapsed open={chartsOpen} onToggle={setChartsOpen} title="Net cash by month" subtitle="What the month's movement left in hand (₹)">
               <NetLine data={netTrend} />
             </ChartCard>
           </div>
@@ -197,28 +174,12 @@ export default function Reports() {
           <ChartCard
             className="shrink-0"
             defaultCollapsed
+            open={chartsOpen}
+            onToggle={setChartsOpen}
             title="Outstanding by customer"
             subtitle="Money still out on active collaterals, largest first (₹)"
           >
             <RankedBars rows={outstandingRows} />
-          </ChartCard>
-        )}
-        {!loading && tab === "Released" && dumbbellRows.length > 0 && (
-          <ChartCard
-            className="shrink-0"
-            defaultCollapsed
-            title="Lent vs recovered"
-            subtitle={`The ${Math.min(12, releases.length)} latest of ${releases.length} released collaterals, what went out against what came back (₹)`}
-            legend={
-              <Legend
-                items={[
-                  { kind: "dot", color: VIZ.dumbStart, label: "Lent out" },
-                  { kind: "dot", color: VIZ.dumbEnd, label: "Recovered" },
-                ]}
-              />
-            }
-          >
-            <Dumbbell rows={dumbbellRows} />
           </ChartCard>
         )}
 

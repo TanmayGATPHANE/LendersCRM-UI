@@ -38,6 +38,14 @@ export default function Users() {
     }
   }
 
+  /** Create the user (POST /api/users) and put the row in the table right
+      away — the dialog closes only when this resolves; a rejection keeps
+      it open with the backend's message. */
+  async function addNewUser(form: { name: string; email: string; password: string; role: Role }) {
+    const created = await addUser(form);
+    setUsers((prev) => [...prev, created]);
+  }
+
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
   return (
@@ -143,13 +151,13 @@ export default function Users() {
       </div>
 
       {/* Add user dialog — own component, keeps this page table-only.
-          onSaved calls the API; a rejected promise keeps the dialog open
-          with the backend's message. */}
+          onSaved creates the user and appends it to the table; a rejected
+          promise keeps the dialog open with the backend's message. */}
       <AddUserDialog
         open={adding}
         emails={users.map((u) => u.email)} // for the duplicate check
         onClose={() => setAdding(false)}
-        onSaved={addUser}
+        onSaved={addNewUser}
       />
     </main>
   );

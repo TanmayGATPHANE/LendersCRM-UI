@@ -12,23 +12,36 @@ import { useState, type ReactNode } from "react";
  * toggle) — reports default collapsed so a big book reaches the data
  * below without scrolling past a wall of marks; opening is one click
  * and animates through the brand curve.
+ *
+ * Pass `open` + `onToggle` to drive it from outside (Reports keeps its
+ * charts in one shared open/closed state, so expanding one expands all
+ * of them — the tab's charts move together); leave the props off and it
+ * holds its own state.
  */
-export function ChartCard({ title, subtitle, legend, children, className = "", defaultCollapsed = false }: {
+export function ChartCard({ title, subtitle, legend, children, className = "", defaultCollapsed = false, open: openProp, onToggle }: {
   title: string;
   subtitle?: string;
   legend?: ReactNode;
   children: ReactNode;
   className?: string;
   defaultCollapsed?: boolean;
+  open?: boolean;
+  onToggle?: (next: boolean) => void;
 }) {
-  const [open, setOpen] = useState(!defaultCollapsed);
+  const [openState, setOpenState] = useState(!defaultCollapsed);
+  const open = openProp ?? openState;
+  function toggle() {
+    const next = !open;
+    if (onToggle) onToggle(next);
+    else setOpenState(next);
+  }
   return (
     <section
       className={`rise-in flex min-w-0 flex-col rounded-xl border border-line bg-card p-4 shadow-sm ${className}`}
     >
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         title={open ? "Collapse chart" : "Expand chart"}
         className="-m-1 flex items-start justify-between gap-x-4 gap-y-1.5 rounded-lg p-1 text-left

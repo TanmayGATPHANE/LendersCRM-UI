@@ -6,7 +6,9 @@ import type { CashLedgerItem, Entry } from "../api/types.ts";
 import CashEntryDialog from "../components/dialogs/CashEntryDialog.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
-import { currentMonthWindow, money, shortDate } from "../utils/format.ts";
+import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
+import useDateRange from "../utils/useDateRange.ts";
+import { money, shortDate } from "../utils/format.ts";
 import { toast } from "../components/Toast.tsx";
 
 /**
@@ -17,11 +19,11 @@ import { toast } from "../components/Toast.tsx";
  * received and interest collected; a partial return posts one; a manual
  * +/− movement outside the business posts one signed row.
  *
- * The calendar opens on the CURRENT MONTH (from/to can widen or clear
- * it). The list itself is paged — rows load 50 at a time so a year of
- * counter activity never lays itself all out at once; the window sum,
- * and "in hand" (SUM over the whole table, from its own endpoint), are
- * always whole-window figures, not the displayed page's.
+ * The date-range picker opens on THIS MONTH (the picker's presets and
+ * popover widen it). The list itself is paged — rows load 50 at a time
+ * so a year of counter activity never lays itself all out at once; the
+ * window sum, and "in hand" (SUM over the whole table, from its own
+ * endpoint), are always whole-window figures, not the displayed page's.
  */
 
 /** What the Source column says for each stored row kind. */
@@ -47,20 +49,21 @@ export default function Cash() {
   const [ledger, setLedger] = useState<CashLedgerItem[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
-  // The calendar opens on the current month — clearing or widening it is
-  // one click; empty dates mean all time.
-  const [from, setFrom] = useState(currentMonthWindow().from);
-  const [to, setTo] = useState(currentMonthWindow().to);
+  // The range opens on This month — the picker widens it (All time = the
+  // whole book); the state contract is persisted per page.
+  const { selected, range, applyCustom } =
+    useDateRange("ams-cash-range", "This month");
   // SUM(Amount) over the whole CashLedger table — the dashboard's number,
   // from its own endpoint so the window above never fakes it smaller.
   const [inHand, setInHand] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   async function refresh() {
+    // Only the range's slice comes over the wire; "in hand" is the
+    // whole-book SUM from its own endpoint.
+    const from = fmtISO(range.start), to = fmtISO(range.end);
     const [rows, es, cashInHand] = await Promise.all([
-      // Only the calendar's slice comes over the wire; "in hand" is the
-      // whole-book SUM from its own endpoint.
-      fetchCashLedger(from || undefined, to || undefined), fetchEntries(), fetchCashTotal(),
+      fetchCashLedger(from, to), fetchEntries(), fetchCashTotal(),
     ]);
     setLedger(rows);
     setEntries(es);
@@ -71,7 +74,7 @@ export default function Cash() {
   // stays client-side over what is already loaded.
   useEffect(() => {
     refresh();
-  }, [from, to]);
+  }, [range]);
 
   /** Delete one manual movement (a corrected mistake). */
   async function removeEntry(id: number, notes: string) {
@@ -112,24 +115,25 @@ export default function Cash() {
       ); // newest day first; within one day the id keeps book order
   }, [ledger, entries]);
 
-  // Search over the source text, who paid and the notes; the calendar
-  // (from/to, inclusive) scopes the window. Both are view filters.
+  // Search over the source text, who paid and the notes; the date range
+  // scopes the window (the API already returned just that slice — the
+  // client-side bounds simply keep the search honest after new saves).
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const from = fmtISO(range.start), to = fmtISO(range.end);
     return rows.filter(
       (r) =>
         (!q || `${r.label} ${r.who} ${r.notes}`.toLowerCase().includes(q)) &&
-        (!from || r.date >= from) &&
-        (!to || r.date <= to)
+        r.date >= from && r.date <= to
     );
-  }, [rows, search, from, to]);
+  }, [rows, search, range]);
 
   // The filters apply to the view only — the real Total Cash Available
   // is SUM(Amount) over the whole table (the backend's insights tile),
   // shown as "in hand"; the filtered sum is labelled per-window.
   const total = shown.reduce((s, r) => s + r.amount, 0);
   const grandTotal = inHand ?? 0;
-  const windowed = Boolean(from || to);
+  const windowed = selected !== "All time";
 
   // Paged rendering: 50 rows, growing by chunks (scroll or button),
   // so 2,000 ledger rows never render at once.
@@ -141,7 +145,7 @@ export default function Cash() {
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Toolbar: search + calendar on the left, running total on the right */}
+      {/* Toolbar: search + date-range picker on the left, running total on the right */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <div className="min-w-44 max-w-xs flex-1">
           <input
@@ -151,38 +155,7 @@ export default function Cash() {
             className={inputCls}
           />
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-line bg-card px-2 py-1.5">
-          <i className="ph ph-calendar-blank text-base text-dim" aria-hidden="true" />
-          <input
-            type="date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => setFrom(e.target.value)}
-            aria-label="From date"
-            title="From date (inclusive)"
-            className="w-32 bg-transparent text-sm text-slate outline-none"
-          />
-          <span className="text-xs text-muted">to</span>
-          <input
-            type="date"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => setTo(e.target.value)}
-            aria-label="To date"
-            title="To date (inclusive)"
-            className="w-32 bg-transparent text-sm text-slate outline-none"
-          />
-          {(from || to) && (
-            <button
-              onClick={() => { setFrom(""); setTo(""); }}
-              title="Clear dates — all time"
-              className="cursor-pointer text-dim hover:text-slate transition-colors duration-300 ease-brand
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
-            >
-              <i className="ph ph-x text-sm" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
         <div className="flex-1" />
         <span className="text-sm text-muted">
           {shown.length} {shown.length === 1 ? "entry" : "entries"} ·{" "}

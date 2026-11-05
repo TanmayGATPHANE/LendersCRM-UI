@@ -21,15 +21,3 @@ export function shortDate(iso: string | null | undefined): string {
 export function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
-
-/** The current month as an inclusive ISO window (its 1st to its last
-    day) — what every page's date filter opens on, so a big book loads
-    only the fresh slice instead of everything. */
-export function currentMonthWindow(): { from: string; to: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const iso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
-}
