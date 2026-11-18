@@ -22,9 +22,9 @@ interface Props {
 export default function CustomerDialog({ open, customer, onClose, onSaved }: Props) {
   const editing = Boolean(customer);
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
+  const [saving, setSaving] = useState(false); // one save, one click
   const [error, setError] = useState("");
 
-  // Reset the form each time the dialog opens.
   // Reset the form each time the dialog opens.
   useEffect(() => {
     if (open) {
@@ -33,6 +33,7 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
         phone: customer ? customer.phone : "",
         address: customer ? customer.address ?? "" : "",
       });
+      setSaving(false);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,9 +45,11 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm({ ...form, [key]: e.target.value });
 
-  /** Save through the API: update when editing, create otherwise. */
+  /** Save through the API: update when editing, create otherwise.
+      The saving latch makes a double click dead. */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     const values = {
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -55,6 +58,7 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
     if (!values.name) return setError("Name is required");
     if (!/^\d{10}$/.test(values.phone.replace(/\s/g, "")))
       return setError("Phone must be 10 digits");
+    setSaving(true);
     try {
       await (editing && customer
         ? updateCustomer(customer.id, values)
@@ -64,6 +68,8 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
       onClose();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -90,9 +96,9 @@ export default function CustomerDialog({ open, customer, onClose, onSaved }: Pro
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" className={primaryBtnCls}>
-            {editing ? "Save Changes" : "Add Customer"}
+          <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? "Saving…" : editing ? "Save Changes" : "Add Customer"}
           </button>
         </div>
       </form>

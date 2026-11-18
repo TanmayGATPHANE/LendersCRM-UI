@@ -4,6 +4,7 @@ import AddEntryDialog from "../components/dialogs/AddEntryDialog.tsx";
 import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
 import ImportDialog from "../components/dialogs/ImportDialog.tsx";
+import OutsourceDialog from "../components/dialogs/OutsourceDialog.tsx";
 import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
@@ -86,6 +87,7 @@ export default function Dashboard() {
   const [editing, setEditing] = useState<Entry | null>(null);
   const [subGroup, setSubGroup] = useState<CollateralGroup | null>(null);
   const [partlyReturning, setPartlyReturning] = useState<CollateralGroup | null>(null);
+  const [outsourcing, setOutsourcing] = useState<CollateralGroup | null>(null); // §4.8
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false); // Excel lending-book import (§4.7)
 
@@ -278,6 +280,7 @@ export default function Dashboard() {
       { label: "Add Sub-Lend", onClick: () => setSubGroup(g), hidden: g.status !== "Active" },
       { label: "Partial Return", onClick: () => setPartlyReturning(g), hidden: g.status !== "Active" },
       { label: "Release", onClick: () => setReleasing(g), hidden: g.status !== "Active" },
+      { label: "Outsource", onClick: () => setOutsourcing(g), hidden: g.status !== "Active" },
     ];
   }
 
@@ -441,6 +444,12 @@ export default function Dashboard() {
         open={showImport}
         onClose={() => setShowImport(false)}
         onSaved={() => refresh()}
+      />
+      <OutsourceDialog
+        open={Boolean(outsourcing)}
+        group={outsourcing}
+        onClose={() => setOutsourcing(null)}
+        onSaved={onSaved}
       />
     </main>
   );

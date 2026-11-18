@@ -23,12 +23,14 @@ interface Props {
 
 export default function PartialReturnDialog({ open, group, onClose, onSaved }: Props) {
   const [form, setForm] = useState({ date: today(), amount: "", notes: "" });
+  const [saving, setSaving] = useState(false); // one payment, one click
   const [error, setError] = useState("");
 
   // Fresh form each time the dialog opens.
   useEffect(() => {
     if (open && group) {
       setForm({ date: today(), amount: "", notes: "" });
+      setSaving(false);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,15 +42,17 @@ export default function PartialReturnDialog({ open, group, onClose, onSaved }: P
     (e: ChangeEvent<HTMLInputElement>) =>
       setForm({ ...form, [key]: e.target.value });
 
-  /** Validate against the outstanding, record the payment, refresh. */
+  /** Validate against the outstanding, record the payment, refresh.
+      The saving latch makes a double click dead (one payment per save). */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!group) return; // the render below guards too, but satisfies TS
+    if (!group || saving) return; // the render below guards too, but satisfies TS
     if (!(Number(form.amount) > 0)) return setError("Enter the amount received");
     if (Number(form.amount) > group.outstanding)
       return setError(
         `Cannot exceed the outstanding ${money(group.outstanding)}`
       );
+    setSaving(true);
     try {
       await addPartial(group.groupId, {
         date: form.date,
@@ -60,6 +64,8 @@ export default function PartialReturnDialog({ open, group, onClose, onSaved }: P
       onClose();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -106,8 +112,10 @@ export default function PartialReturnDialog({ open, group, onClose, onSaved }: P
         </p>
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" className={primaryBtnCls}>Record Partial Return</button>
+          <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? "Recording…" : "Record Partial Return"}
+          </button>
         </div>
       </form>
     </Modal>

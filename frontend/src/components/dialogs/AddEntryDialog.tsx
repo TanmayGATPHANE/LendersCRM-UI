@@ -77,12 +77,14 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
     };
   }
   const [form, setForm] = useState(initialForm);
+  const [saving, setSaving] = useState(false); // one save, one click
   const [error, setError] = useState("");
 
   /** Reset every time the dialog opens (or its target changes). */
   useEffect(() => {
     if (open) {
       setForm(initialForm());
+      setSaving(false);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,10 +108,13 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
   }
 
   /** Validate, then call the API and let the page refresh its table.
-      Which identity fields accompany the payload depends on the mode. */
+      Which identity fields accompany the payload depends on the mode.
+      The saving latch makes a double click dead (one save per click). */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     if (!(Number(form.amount) > 0)) return setError("Amount must be greater than 0");
+    setSaving(true);
     try {
       if (editing && entry) {
         const saved = await updateEntry(entry.id, {
@@ -145,6 +150,8 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
       onClose();
     } catch (err) {
       setError((err as Error).message); // the API's `{ message }` text
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -210,9 +217,9 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" className={primaryBtnCls}>
-            {editing ? "Save Changes" : subOf ? "Add Sub-Lend" : "Save Entry"}
+          <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? "Saving…" : editing ? "Save Changes" : subOf ? "Add Sub-Lend" : "Save Entry"}
           </button>
         </div>
       </form>

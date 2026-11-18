@@ -5,7 +5,7 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
+import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, OutsourcedRow, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
 import { money } from "../utils/format.ts";
@@ -661,4 +661,18 @@ export async function mockImportPreview(file: File): Promise<ImportPreview> {
 
 export async function mockImportCommit(): Promise<ImportResult> {
   throw new Error("Excel import runs on the real API — demo mode has no server.");
+}
+
+/** Outsourcing (§4.8) — demo mode has no server; the page empty, the
+    mutators refuse. */
+export function mockFetchOutsourced(): Promise<OutsourcedRow[]> {
+  return Promise.resolve([]);
+}
+
+export async function mockOutsourceGroup(): Promise<void> {
+  throw new Error("Outsourcing runs on the real API — demo mode has no server.");
+}
+
+export async function mockOutsourceReturn(): Promise<void> {
+  throw new Error("Outsourcing runs on the real API — demo mode has no server.");
 }

@@ -22,6 +22,7 @@ interface Props {
 export default function CashEntryDialog({ open, onClose, onSaved }: Props) {
   const [direction, setDirection] = useState<"+" | "-">("+");
   const [form, setForm] = useState({ date: today(), amount: "", notes: "" });
+  const [saving, setSaving] = useState(false); // one movement, one click
   const [error, setError] = useState("");
 
   // Fresh form each time the dialog opens.
@@ -29,6 +30,7 @@ export default function CashEntryDialog({ open, onClose, onSaved }: Props) {
     if (open) {
       setDirection("+");
       setForm({ date: today(), amount: "", notes: "" });
+      setSaving(false);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,10 +42,13 @@ export default function CashEntryDialog({ open, onClose, onSaved }: Props) {
     (e: ChangeEvent<HTMLInputElement>) =>
       setForm({ ...form, [key]: e.target.value });
 
-  /** Record the movement (amount flipped by the direction), refresh. */
+  /** Record the movement (amount flipped by the direction), refresh.
+      The saving latch makes a double click dead. */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     if (!(Number(form.amount) > 0)) return setError("Enter the amount");
+    setSaving(true);
     try {
       await addManualCash({
         date: form.date,
@@ -58,6 +63,8 @@ export default function CashEntryDialog({ open, onClose, onSaved }: Props) {
       onClose();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -112,9 +119,9 @@ export default function CashEntryDialog({ open, onClose, onSaved }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" className={primaryBtnCls}>
-            {direction === "+" ? "Record Money In" : "Record Money Out"}
+          <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? "Recording…" : direction === "+" ? "Record Money In" : "Record Money Out"}
           </button>
         </div>
       </form>

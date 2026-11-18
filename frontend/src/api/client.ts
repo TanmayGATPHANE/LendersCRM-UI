@@ -18,11 +18,12 @@ import {
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
   mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
   mockReportReleases, mockFetchActivity, mockImportPreview, mockImportCommit,
+  mockFetchOutsourced, mockOutsourceGroup, mockOutsourceReturn,
 } from "./mockApi.ts";
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
   SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, ActivityItem,
-  ImportPreview, ImportResult,
+  ImportPreview, ImportResult, OutsourcedRow,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -164,6 +165,13 @@ interface DataLayer {
   // every imported lend gets (the counter types it; default 2).
   importPreview(file: File, rate: number): Promise<ImportPreview>;
   importCommit(file: File, rate: number): Promise<ImportResult>;
+
+  // Outsourcing (§4.8): the collaterals sitting with an outside party —
+  // handed out on a date with a name and note; while out the group shows
+  // ONLY on the Outsourced page. `outsourceReturn` brings it back.
+  fetchOutsourced(): Promise<OutsourcedRow[]>;
+  outsourceGroup(groupId: number, values: { date: string; to: string; notes: string }): Promise<void>;
+  outsourceReturn(groupId: number, dateReturned: string): Promise<void>;
 }
 
 /** The real backend, one entry per endpoint in plan §6 — same function
@@ -293,6 +301,18 @@ const api: DataLayer = {
   importPreview: (file, rate) => upload<ImportPreview>("/api/import/preview", file, rate, "POST"),
 
   importCommit: (file, rate) => upload<ImportResult>("/api/import/commit", file, rate, "POST"),
+
+  fetchOutsourced: () => http<OutsourcedRow[]>("/api/outsourced"),
+
+  outsourceGroup: (groupId, { date, to, notes }) =>
+    http<void>(`/api/groups/${groupId}/outsource`, {
+      method: "POST", body: { date, to, notes },
+    }),
+
+  outsourceReturn: (groupId, dateReturned) =>
+    http<void>(`/api/groups/${groupId}/outsource/return`, {
+      method: "POST", body: { dateReturned },
+    }),
 };
 
 /** Query string for the windows (reports calendar, cash-ledger window) —
@@ -364,6 +384,9 @@ const mock: DataLayer = {
   fetchActivity: mockFetchActivity,
   importPreview: (file) => mockImportPreview(file),
   importCommit: () => mockImportCommit(),
+  fetchOutsourced: mockFetchOutsourced,
+  outsourceGroup: mockOutsourceGroup,
+  outsourceReturn: mockOutsourceReturn,
 };
 
 const impl: DataLayer = USE_MOCK ? mock : api;
@@ -409,3 +432,10 @@ export const fetchReportReleases = (from?: string, to?: string) => impl.fetchRep
 // Excel lending-book import (§4.7) — parse for the review table, commit for real.
 export const importPreview = (file: File, rate: number) => impl.importPreview(file, rate);
 export const importCommit = (file: File, rate: number) => impl.importCommit(file, rate);
+
+// Outsourcing (§4.8) — the only view where outsourced collaterals show.
+export const fetchOutsourced = () => impl.fetchOutsourced();
+export const outsourceGroup = (groupId: number, values: { date: string; to: string; notes: string }) =>
+  impl.outsourceGroup(groupId, values);
+export const outsourceReturn = (groupId: number, dateReturned: string) =>
+  impl.outsourceReturn(groupId, dateReturned);

@@ -185,6 +185,20 @@ export interface ImportResult {
   returnsSkipped: number;
 }
 
+// ---- outsourcing (§4.8) — mirrors the backend Contracts.cs ----
+
+/** GET /api/outsourced — one OPEN round: the collateral handed to
+    `outsourcedTo`; while it is out the group shows ONLY here. */
+export interface OutsourcedRow {
+  groupId: number;
+  customer: string;
+  item: string;
+  amountLent: number;
+  outsourcedTo: string;
+  date: string; // ISO yyyy-mm-dd of the outsource day
+  notes: string | null;
+}
+
 // ---- global search (the header box) ----
 
 

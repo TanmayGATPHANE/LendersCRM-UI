@@ -30,12 +30,14 @@ interface UserForm {
 
 export default function AddUserDialog({ open, emails, onClose, onSaved }: Props) {
   const [form, setForm] = useState<UserForm>({ name: "", email: "", password: "", role: "Lender" });
+  const [saving, setSaving] = useState(false); // one creation, one click
   const [error, setError] = useState("");
 
   // Fresh form every time the dialog opens.
   useEffect(() => {
     if (open) {
       setForm({ name: "", email: "", password: "", role: "Lender" });
+      setSaving(false);
       setError("");
     }
   }, [open]);
@@ -48,18 +50,23 @@ export default function AddUserDialog({ open, emails, onClose, onSaved }: Props)
     (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm({ ...form, [key]: e.target.value } as UserForm);
 
-  /** Basic validation, then the page's API call; close only on success. */
+  /** Basic validation, then the page's API call; close only on success.
+      The saving latch makes a double click dead. */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     if (form.password.length < 6) return setError("Password needs at least 6 characters");
     if (emails.some((m) => m.toLowerCase() === form.email.toLowerCase()))
       return setError("That email is already used");
+    setSaving(true);
     try {
       await onSaved(form);
       toast(`User added — ${form.name}`, "ok");
       onClose();
     } catch (err) {
       setError((err as Error).message); // e.g. "A user with this email already exists"
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -92,8 +99,10 @@ export default function AddUserDialog({ open, emails, onClose, onSaved }: Props)
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-          <button type="submit" className={primaryBtnCls}>Add User</button>
+          <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+          <button type="submit" disabled={saving} className={primaryBtnCls}>
+            {saving ? "Adding…" : "Add User"}
+          </button>
         </div>
       </form>
     </Modal>

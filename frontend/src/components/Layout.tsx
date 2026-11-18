@@ -13,6 +13,7 @@ const TITLES: Record<string, string> = {
   "/customers": "Customers",
   "/cash": "Cash",
   "/reports": "Reports",
+  "/outsourced": "Outsourced",
   "/users": "Users",
   "/activity": "Activity",
 };
@@ -122,6 +123,10 @@ export default function Layout() {
             <NavLink to="/reports" className={linkClass}>
               <i className={`${iconCls} ph-chart-bar`} aria-hidden="true" />
               Reports
+            </NavLink>
+            <NavLink to="/outsourced" className={linkClass}>
+              <i className={`${iconCls} ph-package`} aria-hidden="true" />
+              Outsourced
             </NavLink>
             {/* Admin-only pages */}
             {user?.role === "Admin" && (

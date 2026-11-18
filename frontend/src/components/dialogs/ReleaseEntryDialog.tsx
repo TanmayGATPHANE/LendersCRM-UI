@@ -44,6 +44,7 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
   // True once the user typed their own Total Collected — after that the
   // field stops following the (recomputed) collectable.
   const [collectedTouched, setCollectedTouched] = useState(false);
+  const [saving, setSaving] = useState(false); // one release, one click
   const [error, setError] = useState("");
 
   /** Derived numbers for the dialog's info panel. Kept as helpers so the
@@ -70,6 +71,7 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
         notes: "",
       });
       setCollectedTouched(false);
+      setSaving(false);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,10 +94,13 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
     }));
   }
 
-  /** Freeze the group and let the page refresh its table. */
+  /** Freeze the group and let the page refresh its table. The saving
+      latch makes a double click dead: the second press arrives while the
+      first request is still in flight and returns from this guard. */
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!group) return; // only reachable in render — satisfies TS
+    if (!group || saving) return;
+    setSaving(true);
     try {
       await releaseGroup(group.groupId, {
         dateReturned: form.dateReturned,
@@ -108,6 +113,8 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
       onClose();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -166,8 +173,10 @@ export default function ReleaseEntryDialog({ open, group, onClose, onSaved }: Pr
             Interest is calculated from each lend's own date.
           </span>
           <div className="flex gap-2">
-            <button type="button" onClick={onClose} className={secondaryBtnCls}>Cancel</button>
-            <button type="submit" className={primaryBtnCls}>Confirm Release</button>
+            <button type="button" onClick={onClose} disabled={saving} className={secondaryBtnCls}>Cancel</button>
+            <button type="submit" disabled={saving} className={primaryBtnCls}>
+              {saving ? "Releasing…" : "Confirm Release"}
+            </button>
           </div>
         </div>
       </form>
