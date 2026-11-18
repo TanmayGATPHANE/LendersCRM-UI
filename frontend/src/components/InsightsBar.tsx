@@ -32,17 +32,11 @@ function useCountUp(target: number, ms = 700): number {
 
 /**
  * InsightsBar — the three headline numbers on top of the Dashboard.
- * Labels and values follow the selected tab:
- *   All      → the backend's global totals (Total Amanat / Interest FY /
- *              Total Cash Available).
- *   Active   → what the working set looks like: money still out, interest
- *              accrued so far, partials received against active
- *              collaterals.
- *   Released → what closed collaterals brought home: principal recovered,
- *              interest collected, cash at the counter from releases.
- * Values come from fetchInsights() on All and from tabInsights()
- * (backend formulas mirrored) on the other tabs, refreshed with every
- * change to the books.
+ * Total Amanat is the sum of the tab's lend amounts (all / active /
+ * released — no deductions); the interest tile follows the tab (FY
+ * collected / accrued live / frozen); Total Cash Available is the SAME
+ * figure on every tab — the cash table's own SUM, nothing else.
+ * Values come from fetchInsights(), refreshed with every change.
  */
 interface Props {
   insights: Insights;
@@ -51,60 +45,23 @@ interface Props {
 
 export default function InsightsBar({ insights, tab = "All" }: Props) {
   // [label, value, hover-hint] per tile, keyed by the tab they belong to.
-  const tiles: Record<"All" | "Active" | "Released", [string, number, string][]> = {
-    All: [
-      [
-        "Total Amanat",
-        insights.totalAmanat,
-        "Money currently lent out on active collaterals",
-      ],
-      [
-        "Interest Earned (FY)",
-        insights.interestEarned,
-        "Interest collected from releases this financial year (Apr–Mar)",
-      ],
-      [
-        "Total Cash Available",
-        insights.cashAvailable,
-        "Money in hand: what you lent out (−), partial returns, the two release legs and manual ± — straight from the cash table",
-      ],
+  const amanatHint =
+    tab === "Active" ? "Sum of the lend amounts on active collaterals"
+    : tab === "Released" ? "Sum of the lend amounts on released collaterals"
+    : "Sum of every lend's amount on the books";
+  const interestTile: [string, string] =
+    tab === "Active" ? ["Interest Outstanding", "Accrued live on the active lends so far — freezes when they release"]
+    : tab === "Released" ? ["Interest Collected", "Interest frozen on the released collaterals"]
+    : ["Interest Earned (FY)", "Interest collected from releases this financial year (Apr–Mar)"];
+  const items: [string, number, string][] = [
+    ["Total Amanat", insights.totalAmanat, amanatHint],
+    [interestTile[0], insights.interestEarned, interestTile[1]],
+    [
+      "Total Cash Available",
+      insights.cashAvailable,
+      "SUM over the cash table only — lends (−), partial returns, the two release legs and manual ±; nothing else (same figure on every tab)",
     ],
-    Active: [
-      [
-        "Total Amanat",
-        insights.totalAmanat,
-        "Money still in customers' hands on the active collaterals shown",
-      ],
-      [
-        "Interest Outstanding",
-        insights.interestEarned,
-        "Accrued live on the active lends so far — freezes when they release",
-      ],
-      [
-        "Cash Out (Active)",
-        insights.cashAvailable,
-        "Cash the drawer gave out on the active collaterals (lends − partials received) — every rupee of Total Amanat is cash not in hand",
-      ],
-    ],
-    Released: [
-      [
-        "Recovered",
-        insights.totalAmanat,
-        "Principal that came back across the released collaterals",
-      ],
-      [
-        "Interest Collected",
-        insights.interestEarned,
-        "Interest frozen on the released collaterals",
-      ],
-      [
-        "Cash from Releases",
-        insights.cashAvailable,
-        "Principal + interest collected on release days (Cash page rows)",
-      ],
-    ],
-  };
-  const items = tiles[tab as "All" | "Active" | "Released"]; // tabs are only ever these three
+  ];
 
   return (
     <div className="stagger grid shrink-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-3">

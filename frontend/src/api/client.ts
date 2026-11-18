@@ -17,11 +17,12 @@ import {
   mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger, mockFetchCashTotal,
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
   mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
-  mockReportReleases, mockFetchActivity,
+  mockReportReleases, mockFetchActivity, mockImportPreview, mockImportCommit,
 } from "./mockApi.ts";
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
   SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, ActivityItem,
+  ImportPreview, ImportResult,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -157,6 +158,12 @@ interface DataLayer {
   // the Activity tab to one user's trail; groupId pulls everything that
   // happened on one collateral group (the expanded-row history panel).
   fetchActivity(userId?: number, groupId?: number): Promise<ActivityItem[]>;
+
+  // The Excel lending-book import (§4.7): parse the workbook for the
+  // dialog's review table, then commit it. `rate` is the %/month that
+  // every imported lend gets (the counter types it; default 2).
+  importPreview(file: File, rate: number): Promise<ImportPreview>;
+  importCommit(file: File, rate: number): Promise<ImportResult>;
 }
 
 /** The real backend, one entry per endpoint in plan §6 — same function
@@ -282,6 +289,10 @@ const api: DataLayer = {
     const qs = p.toString();
     return http<ActivityItem[]>(`/api/activity${qs ? `?${qs}` : ""}`);
   },
+
+  importPreview: (file, rate) => upload<ImportPreview>("/api/import/preview", file, rate, "POST"),
+
+  importCommit: (file, rate) => upload<ImportResult>("/api/import/commit", file, rate, "POST"),
 };
 
 /** Query string for the windows (reports calendar, cash-ledger window) —
@@ -291,6 +302,32 @@ function reportWindowQuery(from?: string, to?: string): string {
   if (from) p.set("from", from);
   if (to) p.set("to", to);
   return p.toString();
+}
+
+/** Multipart upload (the Excel import): the file in a `file` part, the
+    interest rate on the query string. Same JWT/error handling as http(). */
+async function upload<T>(path: string, file: File, rate: number, method: "POST"): Promise<T> {
+  const token = currentUser()?.token;
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}${path}?rate=${encodeURIComponent(String(rate))}`, {
+    method,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (res.status === 401) {
+    setUser(null);
+    if (window.location.pathname !== "/login") window.location.assign("/login");
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const json = await res.json();
+      message = json.message ?? json.title ?? message;
+    } catch { /* non-JSON error body — keep the fallback text */ }
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
 }
 
 /** The mock pair — same names, so the switch below is a pure toggle. */
@@ -325,6 +362,8 @@ const mock: DataLayer = {
   fetchReportCustomers: mockReportCustomers,
   fetchReportReleases: mockReportReleases,
   fetchActivity: mockFetchActivity,
+  importPreview: (file) => mockImportPreview(file),
+  importCommit: () => mockImportCommit(),
 };
 
 const impl: DataLayer = USE_MOCK ? mock : api;
@@ -366,3 +405,7 @@ export const updateUser = (id: number, patch: { name?: string; role?: Role; isAc
 export const fetchReportSummary = (from?: string, to?: string) => impl.fetchReportSummary(from, to);
 export const fetchReportCustomers = (from?: string, to?: string) => impl.fetchReportCustomers(from, to);
 export const fetchReportReleases = (from?: string, to?: string) => impl.fetchReportReleases(from, to);
+
+// Excel lending-book import (§4.7) — parse for the review table, commit for real.
+export const importPreview = (file: File, rate: number) => impl.importPreview(file, rate);
+export const importCommit = (file: File, rate: number) => impl.importCommit(file, rate);

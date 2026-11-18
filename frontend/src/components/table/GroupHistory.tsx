@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchActivity, isAdmin } from "../../api/client.ts";
 import type { ActivityItem } from "../../api/types.ts";
+import { istWhen } from "../../utils/format.ts";
 
 /**
  * GroupHistory — the audit trail of ONE collateral group (§10), shown
@@ -20,12 +21,8 @@ const ACTION_CLS: Record<string, string> = {
   Deleted: "text-red-600",
 };
 
-/** When — local day + clock time ("02 Nov, 4:10 pm"). */
-function when(iso: string): string {
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", hour: "numeric", minute: "2-digit",
-  });
-}
+/** When — Indian day + clock time ("02 Nov, 4:10 pm") from the UTC stamp. */
+const when = istWhen;
 
 export default function GroupHistory({ groupId }: { groupId: number }) {
   const [open, setOpen] = useState(false);

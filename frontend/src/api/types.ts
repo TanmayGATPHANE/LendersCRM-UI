@@ -143,7 +143,50 @@ export interface ReleaseReportRow {
   totalCollected: number | null;
 }
 
+// ---- Excel import (§4.7) — shapes mirror the backend Contracts.cs ----
+
+/** One money row of a parsed sheet: a lend (amount > 0) or an inline
+    partial return (written negative in the sheet, positive here). */
+export interface ImportPreviewRow {
+  date: string; // ISO yyyy-mm-dd
+  amount: number;
+  row: number; // the sheet row it came from (provenance)
+  notes: string | null; // the note the sheet owner wrote on a return
+}
+
+/** One collateral parsed from a sheet — merged Name+Item cells fold that
+    block's rows into one group (sub-lends); unmerged rows stand alone. */
+export interface ImportPreviewGroup {
+  name: string;
+  item: string;
+  row: number;
+  lends: ImportPreviewRow[];
+  returns: ImportPreviewRow[];
+}
+
+/** The whole parsed workbook, as the import dialog's review table reads it. */
+export interface ImportPreview {
+  fileName: string;
+  sheets: string[];
+  sheetUsed: string;
+  groups: ImportPreviewGroup[];
+  warnings: string[];
+}
+
+/** POST /api/import/commit — what the import actually wrote (skipped rows
+    were already on file: re-importing the same file is a no-op). */
+export interface ImportResult {
+  customersCreated: number;
+  customersFound: number;
+  groupsCreated: number;
+  lendsCreated: number;
+  returnsCreated: number;
+  groupsSkipped: number;
+  returnsSkipped: number;
+}
+
 // ---- global search (the header box) ----
+
 
 /** One hit of the header's global search. type: "customer" | "user" |
     "lend" | "payment"; amount rides on transaction hits; groupId is the

@@ -5,7 +5,7 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
+import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
 import { money } from "../utils/format.ts";
@@ -645,4 +645,20 @@ export function mockFetchActivity(userId?: number, groupId?: number): Promise<Ac
       .filter((r) => (!groupId || r.groupId === groupId) && (!userId || r.userId === userId))
       .sort((a, b) => b.atUtc.localeCompare(a.atUtc) || b.id - a.id)
   );
+}
+
+/** Excel import (§4.7) — demo mode has no server to parse with, so the
+    preview comes back empty with a line saying so; the commit refuses. */
+export async function mockImportPreview(file: File): Promise<ImportPreview> {
+  return Promise.resolve({
+    fileName: file.name,
+    sheets: [],
+    sheetUsed: "—",
+    groups: [],
+    warnings: ["Excel import needs the real API — demo mode has no server to parse with."],
+  });
+}
+
+export async function mockImportCommit(): Promise<ImportResult> {
+  throw new Error("Excel import runs on the real API — demo mode has no server.");
 }

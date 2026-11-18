@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import AddEntryDialog from "../components/dialogs/AddEntryDialog.tsx";
 import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
+import ImportDialog from "../components/dialogs/ImportDialog.tsx";
 import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
@@ -14,6 +15,8 @@ import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment, 
 import { buildGroups } from "../utils/grouping.ts";
 import { toast } from "../components/Toast.tsx";
 import { matchesGroup } from "../utils/search.ts";
+import { loadSharedWindow, saveSharedWindow } from "../utils/sharedRange.ts";
+import type { DateRange } from "../components/DateRangePicker.tsx";
 
 /** The three status filters shown as a segmented control. */
 const FILTERS: Array<"All" | EntryStatus> = ["All", "Active", "Released"];
@@ -26,6 +29,35 @@ const VIEWS: Array<"Groups" | "Grid"> = ["Groups", "Grid"];
 
 /** Month filter options — value is the 2-digit month of the ISO date. */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The app's ONE shared date window (utils/sharedRange.ts) rendered as
+    the dashboard's month/year pair: a single-month window → that month;
+    a single calendar year → that year, month "all"; anything wider or
+    unsaved → month and year "all" (or, with nothing saved, the counter's
+    work set: the current month). Reads the same preference Reports/Cash/
+    Activity hydrate, so landing never resets what the user picked. */
+function deriveDashboardWindow(shared: DateRange | null): { month: string; year: string } {
+  if (!shared) {
+    const now = new Date();
+    return { month: String(now.getMonth() + 1).padStart(2, "0"), year: String(now.getFullYear()) };
+  }
+  const sy = shared.start.getFullYear(), ey = shared.end.getFullYear();
+  const sm = shared.start.getMonth(), em = shared.end.getMonth();
+  if (sy !== ey) return { month: "all", year: "all" };
+  if (sm === em) return { month: String(sm + 1).padStart(2, "0"), year: String(sy) };
+  return { month: "all", year: String(sy) };
+}
+
+/** The user's month/year pick → the shared window (written back so every
+    page agrees): a month spans its first..last day, a year spans Jan 1
+    .. Dec 31, both "all" is the All-time window. */
+function sharedWindowFor(m: string, y: string): DateRange {
+  const all = new Date(2000, 0, 1), today = new Date();
+  if (m === "all" && y === "all") return { start: all, end: today };
+  if (m === "all") return { start: new Date(Number(y), 0, 1), end: new Date(Number(y), 11, 31) };
+  const mm = Number(m) - 1;
+  return { start: new Date(Number(y), mm, 1), end: new Date(Number(y), mm, new Date(Number(y), mm + 1, 0).getDate()) };
+}
 
 /**
  * Dashboard — day-to-day lending screen: search + status filter + Add
@@ -41,10 +73,12 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<EntryFilter>("Active"); // daily work = active lends
   const [view, setView] = useState<"Groups" | "Grid">("Groups"); // Groups = ledger rows; Grid = spreadsheet
-  // Month + year of the first lend open on the CURRENT month — the work
-  // in front of the counter today; the dropdowns widen or clear them.
-  const [month, setMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, "0"));
-  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  // Month + year of the first lend — derived once from the shared date
+  // window on first render (never resets on landing; utils/sharedRange).
+  // The dropdowns' handlers write the pick back to the shared window.
+  const [initialWindow] = useState(() => deriveDashboardWindow(loadSharedWindow()));
+  const [month, setMonth] = useState(initialWindow.month);
+  const [year, setYear] = useState(initialWindow.year);
 
   // Which dialogs are open: group being released, entry being edited,
   // group receiving a sub-lend or a partial return, or a plain Add Entry.
@@ -53,6 +87,7 @@ export default function Dashboard() {
   const [subGroup, setSubGroup] = useState<CollateralGroup | null>(null);
   const [partlyReturning, setPartlyReturning] = useState<CollateralGroup | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false); // Excel lending-book import (§4.7)
 
   // Load everything once on mount — customers ride along so the Add
   // Entry suggestions always know about customers created since.
@@ -188,12 +223,24 @@ export default function Dashboard() {
 
   // The years any record falls in — feeds the year dropdown; the current
   // year always sits in the list (the default filter), even on a fresh book.
+  // The shared window's own year rides the list too, so a restored filter
+  // always has its option, entry-less or not.
   const years = useMemo(() => {
     const ys = new Set<string>([String(new Date().getFullYear())]);
+    if (year !== "all") ys.add(year);
     for (const e of entries) if (e.date) ys.add(e.date.slice(0, 4));
     for (const p of partials) if (p.date) ys.add(p.date.slice(0, 4));
     return [...ys].sort().reverse();
-  }, [entries, partials]);
+  }, [entries, partials, year]);
+
+  /** One dropdown change → the shared window (Dashboard, Reports, Cash
+      and Activity all read it): picking a month while the year is "all"
+      anchors that month to the current year. */
+  function setWindow(m: string, y: string): void {
+    setMonth(m);
+    setYear(y);
+    saveSharedWindow(sharedWindowFor(m, y));
+  }
 
   // Collateral groups + global search (customer / item / date / amount)
   // + status filter + month/year of the collateral's first lend. Both
@@ -290,7 +337,7 @@ export default function Dashboard() {
         {/* Month + year of the first lend, near the Refresh button */}
         <select
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
+          onChange={(e) => setWindow(e.target.value, e.target.value !== "all" && year === "all" ? String(new Date().getFullYear()) : year)}
           title="Filter by month of the lend"
           className={selectCls}
         >
@@ -301,7 +348,7 @@ export default function Dashboard() {
         </select>
         <select
           value={year}
-          onChange={(e) => setYear(e.target.value)}
+          onChange={(e) => setWindow(month, e.target.value)}
           title="Filter by year of the lend"
           className={selectCls}
         >
@@ -325,10 +372,16 @@ export default function Dashboard() {
 
         {/* Writing is Admin/Lender only — view-only accounts browse. */}
         {canEdit() && (
-          <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
-            <i className="ph ph-plus text-lg" aria-hidden="true" />
-            Add Entry
-          </button>
+          <>
+            <button onClick={() => setShowImport(true)} className={secondaryBtnCls} title="Import a yearly Excel lending book">
+              <i className="ph ph-microsoft-excel-logo text-lg" aria-hidden="true" />
+              Import
+            </button>
+            <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
+              <i className="ph ph-plus text-lg" aria-hidden="true" />
+              Add Entry
+            </button>
+          </>
         )}
       </div>
 
@@ -383,6 +436,11 @@ export default function Dashboard() {
         group={partlyReturning}
         onClose={() => setPartlyReturning(null)}
         onSaved={onSaved}
+      />
+      <ImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSaved={() => refresh()}
       />
     </main>
   );

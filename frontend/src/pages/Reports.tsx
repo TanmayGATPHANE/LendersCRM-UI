@@ -63,7 +63,7 @@ export default function Reports() {
   // The range opens on This month (the page's default); the picker's
   // state contract (selection + confirmed window) is persisted per page.
   const { selected, range, applyCustom } =
-    useDateRange("ams-reports-range", "This month");
+    useDateRange("This month");
 
   useEffect(() => {
     let live = true;

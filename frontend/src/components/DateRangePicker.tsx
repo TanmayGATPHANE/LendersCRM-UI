@@ -235,11 +235,19 @@ export default function DateRangePicker({
     const pr = pop.getBoundingClientRect();
     const mr = (root.closest("main") ?? document.body).getBoundingClientRect();
     const w = pr.width, pad = 8;
-    // Want the popover's right edge at the root's — unless that pushes
-    // its left edge past main's left, or its right edge past main's
-    // right (the box main clips at). Clamp the left edge into main.
-    const leftInRoot = Math.min(Math.max(rr.right - w - mr.left, pad), mr.width - w - pad);
-    setFitLeft(Math.max(pad, leftInRoot));
+    // The popover must sit with its RIGHT edge at the button's, unless
+    // that pushes its left edge past main's left, or its right edge past
+    // main's right (the box main clips at). leftInMain clamps the left
+    // edge into main — in MAIN coordinates. `left` however is measured
+    // from the BUTTON (the popover's containing block is the relative
+    // root), so the main-relative offset cross over by subtracting the
+    // button's own horizontal offset inside main — skipping this made
+    // the popover fly off-screen on wide windows (it "worked" on narrow
+    // ones only because the clamp saturated at `pad`, right of
+    // the button anyway).
+    const btnOffset = rr.left - mr.left;
+    const leftInMain = Math.min(Math.max(rr.right - w - mr.left, pad), mr.width - w - pad);
+    setFitLeft(leftInMain - btnOffset);
   }, [open, ps.leftMonth]); // re-measure when the calendars swap (single vs twin)
 
   // Click-outside and Escape close the popover (discarding the draft).

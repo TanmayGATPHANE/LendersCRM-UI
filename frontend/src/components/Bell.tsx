@@ -4,15 +4,35 @@ import { fetchEntries, fetchPartials } from "../api/client.ts";
 import type { Entry, Payment } from "../api/types.ts";
 import { daysBetween } from "../utils/interest.ts";
 
-/** The header's attention bell (like the reference mock's red-dot bell):
-    an active collateral that is over the horizon with no money back gets a
-    notification — click it to jump the dashboard to that group. The rule:
-    still Active (no release), zero partial returns, first lend 60+ days
-    old. Counts ride on the plain entries + payments lists the whole app
-    already reads; no money figures are computed here. */
+/**
+ * The header's attention bell: an ACTIVE collateral past 60 days with no
+ * money back gets one notice — click it to jump the dashboard to that
+ * group. The counter owns the list: jumping to a group marks it SEEN, or
+ * clear everything at once ("All seen"); the choice persists per browser
+ * (utils — localStorage key below), so the red dot only counts what is
+ * genuinely new. The books themselves still retire a notice the honest
+ * way — a partial return or a release drops the group out of the rule.
+ */
 
 /** "Out this long and never paid anything back" — the attention threshold. */
 const STALE_DAYS = 60;
+
+/** Groups the counter has dismissed, stored per browser. */
+const SEEN_KEY = "ams-notices-seen";
+
+function loadSeen(): Set<number> {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]") as number[];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeen(seen: Set<number>): void {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seen])); }
+  catch { /* storage unavailable — the dot just re-arms next load */ }
+}
 
 interface Notice {
   groupId: number;
@@ -25,6 +45,7 @@ export default function Bell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [seen, setSeen] = useState<Set<number>>(loadSeen);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -38,7 +59,7 @@ export default function Bell() {
   }, []);
 
   // Refresh with every navigation — returning from a release page drops
-  // the noticed group from the list.
+  // the noticed group from the list, and the store may have changed.
   useEffect(() => {
     let live = true;
     Promise.all([fetchEntries(), fetchPartials()])
@@ -74,51 +95,97 @@ export default function Bell() {
         );
       })
       .catch(() => { /* the pages surface their own errors */ });
+    setSeen(loadSeen()); // re-read on navigation, cheap
     return () => { live = false; };
   }, [location.pathname]);
+
+  const unseen = notices.filter((n) => !seen.has(n.groupId));
+
+  /** One notice acted on: it leaves the unread set for good (per this
+      browser) — the books govern the rest (a payment or release retires
+      it on their own). */
+  function dismiss(groupId: number): void {
+    setSeen((prev) => {
+      const next = new Set(prev).add(groupId);
+      saveSeen(next);
+      return next;
+    });
+  }
+
+  function markAllSeen(): void {
+    setSeen((prev) => {
+      const next = new Set(prev);
+      for (const n of unseen) next.add(n.groupId);
+      saveSeen(next);
+      return next;
+    });
+    setOpen(false);
+  }
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => notices.length > 0 && setOpen((o) => !o)}
+        onClick={() => setOpen((o) => !o)}
         className={`relative grid h-8 w-8 place-items-center rounded-full text-slate hover:bg-tint
                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
                     transition-colors duration-300 ease-brand`}
-        aria-label={`Notifications${notices.length ? ` (${notices.length})` : ""}`}
+        aria-label={`Notifications${unseen.length ? ` (${unseen.length} unseen)` : ""}`}
       >
         <i className="ph ph-bell text-xl" aria-hidden="true" />
-        {notices.length > 0 && (
+        {unseen.length > 0 && (
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-card" />
         )}
       </button>
       {open && (
         <div className="anim-pop-in absolute right-0 top-full z-50 mt-2 w-80 origin-top-right rounded-xl border border-line bg-card py-1.5 shadow-[0_8px_30px_rgba(11,28,48,0.14)]">
-          <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-dim">
-            Needs attention
+          <div className="flex items-center justify-between px-3 pb-1 pt-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-dim">
+              Needs attention
+            </span>
+            {unseen.length > 0 && (
+              <button
+                onClick={markAllSeen}
+                className="text-xs text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2
+                           focus-visible:ring-primary/40 rounded px-1 transition-colors duration-300 ease-brand"
+              >
+                All seen
+              </button>
+            )}
           </div>
-          {notices.map((n) => (
-            <button
-              key={n.groupId}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setOpen(false);
-                navigate("/", { state: { focusGroupId: n.groupId } });
-              }}
-              className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-tint
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
-                          focus-visible:ring-primary/40`}
-            >
-              <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-tint text-slate">
-                <i className="ph ph-clock text-base" aria-hidden="true" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-ink">{n.customerName} — {n.item}</span>
-                <span className="block text-xs text-muted">
-                  {n.days} days out · no return yet
-                </span>
-              </span>
-            </button>
-          ))}
+          {unseen.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-muted">
+              {notices.length > 0
+                ? `All caught up — ${notices.length} earlier seen`
+                : "Nothing needs attention — no old lend is sitting unpaid."}
+            </p>
+          ) : (
+            <>
+              {unseen.map((n) => (
+                <button
+                  key={n.groupId}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    dismiss(n.groupId);
+                    setOpen(false);
+                    navigate("/", { state: { focusGroupId: n.groupId } });
+                  }}
+                  className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-tint
+                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset
+                              focus-visible:ring-primary/40`}
+                >
+                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-tint text-slate">
+                    <i className="ph ph-clock text-base" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-ink">{n.customerName} — {n.item}</span>
+                    <span className="block text-xs text-muted">
+                      {n.days} days out · no return yet
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>

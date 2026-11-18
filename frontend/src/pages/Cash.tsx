@@ -52,7 +52,7 @@ export default function Cash() {
   // The range opens on This month — the picker widens it (All time = the
   // whole book); the state contract is persisted per page.
   const { selected, range, applyCustom } =
-    useDateRange("ams-cash-range", "This month");
+    useDateRange("This month");
   // SUM(Amount) over the whole CashLedger table — the dashboard's number,
   // from its own endpoint so the window above never fakes it smaller.
   const [inHand, setInHand] = useState<number | null>(null);

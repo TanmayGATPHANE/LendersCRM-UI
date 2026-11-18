@@ -5,6 +5,7 @@ import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
 import useDateRange from "../utils/useDateRange.ts";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { selectCls } from "../components/ui.ts";
+import { istWhen } from "../utils/format.ts";
 
 /**
  * Activity — the audit trail (§10), Admin only: every add, edit, partial
@@ -26,12 +27,9 @@ const ACTION_CLS: Record<string, string> = {
   Deleted: "bg-tint text-red-600",
 };
 
-/** When a row happened — local date and clock time ("02 Nov, 4:10 pm"). */
-function when(iso: string): string {
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", hour: "numeric", minute: "2-digit",
-  });
-}
+/** When a row happened — Indian day + clock time ("02 Nov, 4:10 pm")
+    rendered from the UTC stamp (the same helper everywhere). */
+const when = istWhen;
 
 export default function Activity() {
   const [rows, setRows] = useState<ActivityItem[]>([]);
@@ -42,7 +40,7 @@ export default function Activity() {
   // it filters client-side (opens on ALL TIME, not a preset window, so a
   // check of the books sees history right away).
   const { selected, range, applyCustom } =
-    useDateRange("ams-activity-range", "All time");
+    useDateRange("All time");
 
   // The trail refetches whenever the user filter changes; one admin-only
   // endpoint serves the whole row and the filter is a query param.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import DotsMenu from "../components/DotsMenu.tsx";
 import AddUserDialog from "../components/dialogs/AddUserDialog.tsx";
+import ChangeRoleDialog from "../components/dialogs/ChangeRoleDialog.tsx";
 import { fetchUsers, addUser, updateUser } from "../api/client.ts";
 import type { Role, UserItem } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
@@ -16,6 +17,7 @@ export default function Users() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const [reassigning, setReassigning] = useState<UserItem | null>(null); // Change Role dialog (§2)
 
   useEffect(() => {
     fetchUsers().then(setUsers).catch((e: unknown) => toast((e as Error).message));
@@ -44,6 +46,15 @@ export default function Users() {
   async function addNewUser(form: { name: string; email: string; password: string; role: Role }) {
     const created = await addUser(form);
     setUsers((prev) => [...prev, created]);
+  }
+
+  /** Re-assign one account's role (PUT /api/users/{id} role) — the Change
+      Role dialog resolves this; a thrown error (e.g. the last-admin
+      refusal) keeps the dialog open with the backend's message. */
+  async function changeRole(id: number, role: Role): Promise<UserItem> {
+    const updated = await updateUser(id, { role });
+    setUsers((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+    return updated;
   }
 
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
@@ -79,6 +90,7 @@ export default function Users() {
                 </div>
                 <DotsMenu
                   items={[
+                    { label: "Change role", onClick: () => setReassigning(u) },
                     { label: u.isActive ? "Disable" : "Enable", onClick: () => toggleActive(u) },
                   ]}
                 />
@@ -131,6 +143,10 @@ export default function Users() {
                   <DotsMenu
                     items={[
                       {
+                        label: "Change role",
+                        onClick: () => setReassigning(u),
+                      },
+                      {
                         label: u.isActive ? "Disable" : "Enable",
                         onClick: () => toggleActive(u),
                       },
@@ -158,6 +174,15 @@ export default function Users() {
         emails={users.map((u) => u.email)} // for the duplicate check
         onClose={() => setAdding(false)}
         onSaved={addNewUser}
+      />
+
+      {/* Change Role — one account's access level; backend refuses the
+          last-admin demotion and the message shows here. */}
+      <ChangeRoleDialog
+        open={Boolean(reassigning)}
+        user={reassigning}
+        onClose={() => setReassigning(null)}
+        onSaved={changeRole}
       />
     </main>
   );
