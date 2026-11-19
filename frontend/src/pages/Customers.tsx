@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import DotsMenu from "../components/DotsMenu.tsx";
 import CustomerDialog from "../components/dialogs/CustomerDialog.tsx";
 import HistoryView from "../components/history/HistoryView.tsx";
+import { Skeleton, SkeletonRows, SkeletonCards } from "../components/Skeleton.tsx";
 import { fetchCustomers, fetchEntries, fetchPartials, canEdit } from "../api/client.ts";
 import type { Customer, Entry, Payment } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
@@ -23,12 +24,22 @@ export default function Customers() {
   const [editing, setEditing] = useState<Customer | null>(null); // null = closed
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<number[]>([]); // customer ids with open history
+  // First-load skeleton: grey rows until the directory arrives.
+  const [loading, setLoading] = useState(true);
 
   // Load everything once on mount (entries/partials power the history).
   useEffect(() => {
-    fetchCustomers().then(setCustomers);
-    fetchEntries().then(setEntries);
-    fetchPartials().then(setPartials);
+    let live = true;
+    Promise.all([fetchCustomers(), fetchEntries(), fetchPartials()])
+      .then(([cs, es, ps]) => {
+        if (!live) return;
+        setCustomers(cs);
+        setEntries(es);
+        setPartials(ps);
+      })
+      .catch(() => { /* the skeletons stay up; the refresh surfaces errors */ })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
   }, []);
 
   // Inbound focus from the header's global search: open the hit customer's
@@ -77,6 +88,11 @@ export default function Customers() {
 
   const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
 
+  // Data-driven columns: the Phone column only earns its space when any
+  // customer actually has a number — for a directory imported without
+  // phones it would be a column of "—" for no information.
+  const showPhone = customers.some((c) => c.phone);
+
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Toolbar: search on the left, Add Customer on the right */}
@@ -102,6 +118,8 @@ export default function Customers() {
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {/* Mobile: one card per customer, history expands inline */}
         <div className="stagger space-y-2 p-3 md:hidden">
+          {loading ? <SkeletonCards count={5} /> : (
+          <>
           {page.map((c) => (
             <div key={c.id} className="rounded-xl border border-line p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -117,7 +135,7 @@ export default function Customers() {
                     )}
                   </span>
                   <span className="mt-0.5 flex items-center gap-1 text-xs text-slate">
-                    {c.phone ? `+91 ${c.phone}` : "No phone"}
+                    {showPhone ? (c.phone ? `+91 ${c.phone}` : "No phone") : c.address}
                     <i
                       className={`ph ph-caret-down text-sm text-dim transition-transform duration-300 ease-brand ${
                         expanded.includes(c.id) ? "rotate-180" : ""
@@ -152,18 +170,24 @@ export default function Customers() {
               {customers.length === 0 ? "Add your first customer." : "No customers found."}
             </p>
           )}
+          </>
+          )}
         </div>
 
         <table className="hidden table-fixed w-full min-w-[560px] text-sm md:table">
           <thead className="sticky top-0 z-10 bg-card border-b border-line">
             <tr>
-              <th className={`${th} w-[45%]`}>Name</th>
-              <th className={`${th} w-[30%]`}>Phone</th>
+              <th className={`${th} w-[50%]`}>Name</th>
+              {showPhone && <th className={`${th} w-[25%]`}>Phone</th>}
               <th className={`${th} w-[15%] text-right`}>Active Entries</th>
               <th className={`${th} w-[10%] text-right`}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {loading ? (
+              <SkeletonRows rows={8} cols={showPhone ? 4 : 3} />
+            ) : (
+            <>
             {page.map((c) => (
               // Fragment so the customer row and (optionally) their detail
               // row render as siblings under one key.
@@ -192,7 +216,7 @@ export default function Customers() {
                       </span>
                     </button>
                   </td>
-                  <td className="px-3 py-2 text-slate">{c.phone ? `+91 ${c.phone}` : "—"}</td>
+                  <td className="px-3 py-2 text-slate">{showPhone ? (c.phone ? `+91 ${c.phone}` : "—") : c.address}</td>
                   <td className="px-3 py-2 text-right text-slate">{c.activeCount}</td>
                   <td className="px-3 py-2 text-right">
                     <DotsMenu
@@ -207,7 +231,7 @@ export default function Customers() {
                 {/* Inline history — same view the Dashboard rows expand to */}
                 {expanded.includes(c.id) && (
                   <tr className="bg-tint/60">
-                    <td colSpan={4} className="px-4 py-3">
+                    <td colSpan={showPhone ? 4 : 3} className="px-4 py-3">
                       <div className="rounded-lg border border-line bg-card p-3">
                         <HistoryView customer={c} entries={entries} partials={partials} />
                       </div>
@@ -218,10 +242,12 @@ export default function Customers() {
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={4} className="hidden px-3 py-10 text-center text-sm text-muted md:table-cell">
+                <td colSpan={showPhone ? 4 : 3} className="hidden px-3 py-10 text-center text-sm text-muted md:table-cell">
                   {customers.length === 0 ? "Add your first customer." : "No customers found."}
                 </td>
               </tr>
+            )}
+            </>
             )}
           </tbody>
         </table>

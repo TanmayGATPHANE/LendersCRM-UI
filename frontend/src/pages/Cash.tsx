@@ -4,6 +4,8 @@ import {
 } from "../api/client.ts";
 import type { CashLedgerItem, Entry } from "../api/types.ts";
 import CashEntryDialog from "../components/dialogs/CashEntryDialog.tsx";
+import ConfirmDialog from "../components/ConfirmDialog.tsx";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
 import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
@@ -57,6 +59,11 @@ export default function Cash() {
   // from its own endpoint so the window above never fakes it smaller.
   const [inHand, setInHand] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // First-load skeleton: grey rows until the ledger slice arrives; range
+  // changes after that keep the previous rows on screen (no flicker).
+  const [loading, setLoading] = useState(true);
+  // The delete confirmation (in-app, not window.confirm) + its target.
+  const [deleting, setDeleting] = useState<CashLedgerItem | null>(null);
 
   async function refresh() {
     // Only the range's slice comes over the wire; "in hand" is the
@@ -68,6 +75,7 @@ export default function Cash() {
     setLedger(rows);
     setEntries(es);
     setInHand(cashInHand);
+    setLoading(false);
   }
 
   // The window refetches its slice from the server; the search box
@@ -76,9 +84,9 @@ export default function Cash() {
     refresh();
   }, [range]);
 
-  /** Delete one manual movement (a corrected mistake). */
+  /** Delete one manual movement (a corrected mistake) — confirmed in the
+      app's own dialog, never the browser's raw popup. */
   async function removeEntry(id: number, notes: string) {
-    if (!window.confirm(`Delete this cash entry${notes ? ` (${notes})` : ""}?`)) return;
     try {
       await deleteCashEntry(id);
       toast("Cash entry removed", "ok");
@@ -173,6 +181,8 @@ export default function Cash() {
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {/* Mobile: one card per money movement */}
         <div className="stagger space-y-2 p-3 md:hidden">
+          {loading ? <SkeletonCards count={5} /> : (
+          <>
           {visibleRows.map((r) => {
             const manual = r.row.source === "Manual";
             const signed = manual || r.row.source === "Lend";
@@ -200,7 +210,7 @@ export default function Cash() {
                     </span>
                     {manual && canEdit() && (
                       <button
-                        onClick={() => removeEntry(r.row.id, r.notes)}
+                        onClick={() => setDeleting(r.row)}
                         title="Delete this cash entry"
                         className="cursor-pointer text-dim hover:text-red-600
                                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
@@ -224,6 +234,8 @@ export default function Cash() {
               </span>
             </div>
           )}
+          </>
+          )}
         </div>
 
         <table className="hidden w-full table-fixed min-w-[640px] text-sm md:table">
@@ -237,6 +249,10 @@ export default function Cash() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {loading ? (
+              <SkeletonRows rows={8} cols={canEdit() ? 5 : 4} />
+            ) : (
+            <>
             {visibleRows.map((r) => {
               const manual = r.row.source === "Manual";
               // Money out (lends, manual −) always shows its sign in red;
@@ -272,7 +288,7 @@ export default function Cash() {
                     <td className="px-3 py-2 text-right">
                       {manual && (
                         <button
-                          onClick={() => removeEntry(r.row.id, r.notes)}
+                          onClick={() => setDeleting(r.row)}
                           title="Delete this cash entry"
                           className="cursor-pointer text-dim hover:text-red-600
                                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
@@ -299,6 +315,8 @@ export default function Cash() {
                 </td>
               </tr>
             )}
+            </>
+            )}
           </tbody>
         </table>
 
@@ -312,6 +330,20 @@ export default function Cash() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onSaved={refresh}
+      />
+
+      {/* The delete confirmation — the app's own dialog, not the browser's */}
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Delete Cash Entry"
+        message={
+          deleting
+            ? `Remove this ${deleting.amount < 0 ? "money out" : "money in"} row of ${money(deleting.amount)}${deleting.notes ? ` (${deleting.notes})` : ""}? Only manual movements can be removed — the books return to what they said before it was recorded.`
+            : ""
+        }
+        confirmLabel="Delete Entry"
+        onClose={() => setDeleting(null)}
+        onConfirm={() => (deleting ? removeEntry(deleting.id, deleting.notes ?? "") : Promise.resolve())}
       />
     </main>
   );

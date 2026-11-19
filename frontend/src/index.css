@@ -17,11 +17,13 @@
   --color-tint-hover: #dce9ff; /* stronger hover fill */
   --color-line: #e2e8f0; /* hairline borders */
 
-  /* Ink — primary text and muted text */
+  /* Ink — primary text and muted text. Both pass 4.5:1 on the card and
+     the tint well (small helper text included); muted stays noticeably
+     lighter than ink, dim than muted, so the hierarchy reads at a glance. */
   --color-ink: #0b1c30;
   --color-slate: #3f484c;
-  --color-muted: #64748b;
-  --color-dim: #94a3b8;
+  --color-muted: #566680;
+  --color-dim: #66778e;
 
   /* Primary teal (buttons, active nav, focus rings) */
   --color-primary: #0e7490;
@@ -91,6 +93,22 @@
 .anim-drift { animation: drift 11s var(--ease-brand) infinite; }
 .anim-drift-slow { animation: drift 17s var(--ease-brand) infinite reverse; }
 
+/* ---- Skeleton loaders ----
+   The loading shape of what is about to render: grey blocks that pulse
+   gently on the spot. Opacity only (transform stays none), and under
+   prefers-reduced-motion they settle at 60% and stop moving. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9; }
+}
+.skeleton {
+  background: var(--color-tint-hover);
+  animation: skeleton-pulse 1.3s var(--ease-brand) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; opacity: 0.6; }
+}
+
 /* Staggered entrance for children (tiles, rows, menu blocks): each child
    rises 40ms after the previous one, capped so long lists never crawl. */
 .stagger > * { animation: fade-up 0.45s var(--ease-brand) backwards; }
@@ -134,3 +152,28 @@
 }
 /* Tables: numerals align in columns (₹ + digits), so money lines up. */
 table td { font-variant-numeric: tabular-nums; }
+/* Skeleton cards render without the entrance stagger. */
+.stagger-none > * { animation: none; }
+
+/* Every interactive control shows the HAND on hover. Tailwind v4 dropped
+   the button pointer its old preflight had, so it is declared here once
+   for the whole app: buttons, ARIA clickables (menus, options, tabs),
+   links, selects, the file inputs and the toggle-labels (radio/checkbox)
+   the dialogs pick with. Disabled controls keep the default arrow —
+   dead things don't invite a click. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="option"],
+[role="menuitem"],
+a[href],
+select:not(:disabled),
+summary,
+input[type="radio"],
+input[type="checkbox"],
+input[type="file"],
+label:has(> input[type="radio"]),
+label:has(> input[type="checkbox"]),
+label:has(> input[type="file"]) {
+  cursor: pointer;
+}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Insights } from "../api/types.ts";
 import { money } from "../utils/format.ts";
 import { pulse } from "../utils/pulse.ts";
+import { Skeleton } from "./Skeleton.tsx";
 
 /** Counts a number up (or down) to its target over ~0.7s on the brand
     curve's cubic equivalent. Static under prefers-reduced-motion. */
@@ -41,9 +42,28 @@ function useCountUp(target: number, ms = 700): number {
 interface Props {
   insights: Insights;
   tab?: string;
+  /** Nothing fetched yet → the three tiles stand as grey blocks. */
+  loading?: boolean;
 }
 
-export default function InsightsBar({ insights, tab = "All" }: Props) {
+export default function InsightsBar({ insights, tab = "All", loading = false }: Props) {
+  if (loading) {
+    // First-fetch skeleton: same tile frames, grey blocks before the numbers.
+    return (
+      <div className="grid shrink-0 grid-cols-1 gap-3 pb-3 sm:grid-cols-3">
+        {["Total Amanat", "Interest", "Total Cash Available"].map((t) => (
+          <div key={t} className="rounded-xl border border-line bg-card px-4 py-3 shadow-sm">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted">{t}</span>
+            <Skeleton className="mt-2.5 h-7 w-28" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <InsightsTiles insights={insights} tab={tab} />;
+}
+
+function InsightsTiles({ insights, tab }: { insights: Insights; tab: string }) {
   // [label, value, hover-hint] per tile, keyed by the tab they belong to.
   const amanatHint =
     tab === "Active" ? "Sum of the lend amounts on active collaterals"

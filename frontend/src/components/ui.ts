@@ -40,3 +40,12 @@ export const ghostIconBtnCls =
   "rounded-md p-1 text-muted hover:bg-tint-hover hover:text-ink " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 " +
   "transition-colors duration-300 ease-brand";
+
+/** Class for destructive (red) buttons — deletes remove money history,
+    so the confirm verb is a different color, not a second teal. */
+export const dangerBtnCls =
+  "inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold " +
+  "text-white shadow-sm hover:bg-red-700 active:bg-red-800 " +
+  "active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 " +
+  "focus-visible:ring-red-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
+  "transition duration-300 ease-brand disabled:opacity-60";

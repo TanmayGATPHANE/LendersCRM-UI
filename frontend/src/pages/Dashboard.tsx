@@ -5,7 +5,7 @@ import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
 import ImportDialog from "../components/dialogs/ImportDialog.tsx";
 import OutsourceDialog from "../components/dialogs/OutsourceDialog.tsx";
-import EntryGroupTable from "../components/table/EntryGroupTable.tsx";
+import EntryGroupTable, { type SortCol, type SortSpec } from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
@@ -71,6 +71,9 @@ export default function Dashboard() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [partials, setPartials] = useState<Payment[]>([]); // partial returns (§4.6)
+  // First-load skeleton: the tables stand as grey rows until the books
+  // arrive; later refreshes keep the previous rows on screen (no flicker).
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<EntryFilter>("Active"); // daily work = active lends
   const [view, setView] = useState<"Groups" | "Grid">("Groups"); // Groups = ledger rows; Grid = spreadsheet
@@ -159,11 +162,16 @@ export default function Dashboard() {
     setPartials(p);
     setInsights(i);
     setCustomers(c);
+    setLoading(false);
   }
 
   /** Switching tabs refetches the tiles for that tab — the numbers are
-      the API's, never computed here. */
+      the API's, never computed here. The first render skips this: the
+      mount's refresh() above already fetched the current tab's tiles,
+      so firing again would double the same request. */
+  const tabsFetched = useRef(false);
   useEffect(() => {
+    if (!tabsFetched.current) { tabsFetched.current = true; return; }
     let live = true;
     fetchInsights(filter)
       .then((i) => { if (live) setInsights(i); })
@@ -259,11 +267,53 @@ export default function Dashboard() {
     [entries, partials, search, filter, month, year]
   );
 
+  // Column sorting — the header click sets the column (re-clicking the
+  // same one flips asc/desc); a fresh column always starts ascending.
+  const [sort, setSort] = useState<SortSpec>({ col: "date", dir: "asc" });
+  function onSort(col: SortCol): void {
+    setSort((s) => (s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }));
+  }
+
+  // Sort BEFORE pagination, so the visible pages follow the header. The
+  // amount column sorts by what its row shows (the collected figure on a
+  // released collateral, the main lend otherwise).
+  const sorted = useMemo(
+    () =>
+      sort.col === "date" && sort.dir === "asc"
+        ? shown // the data's natural order — sort nothing
+        : [...shown].sort((a, b) => {
+            const flip = sort.dir === "desc" ? -1 : 1;
+            switch (sort.col) {
+              case "customer":
+                return flip * a.customerName.localeCompare(b.customerName);
+              case "amount": {
+                const av = a.status === "Released" ? (a.primary.totalCollected ?? 0) : a.primary.amount;
+                const bv = b.status === "Released" ? (b.primary.totalCollected ?? 0) : b.primary.amount;
+                return flip * (av - bv);
+              }
+              case "rate": {
+                const ar = a.primary.rate ?? -1;
+                const br = b.primary.rate ?? -1;
+                if (ar !== br) return flip * (ar - br);
+                return flip * a.customerName.localeCompare(b.customerName);
+              }
+              case "status": {
+                const rank = (x: string) => (x === "Active" ? 0 : 1);
+                if (rank(a.status) !== rank(b.status)) return flip * (rank(a.status) - rank(b.status));
+                return flip * a.date.localeCompare(b.date);
+              }
+              default:
+                return flip * a.date.localeCompare(b.date);
+            }
+          }),
+    [shown, sort]
+  );
+
   // Paged rendering — 50 groups at a time (scroll or "Show more"), so a
   // 1,000-customer book lays out only the slice in view. The Add Entry
   // suggestions below still see the FULL filtered list.
-  const [visibleGroups, moreGroups] = useChunkedRows(shown.length);
-  const paged = shown.slice(0, visibleGroups);
+  const [visibleGroups, moreGroups] = useChunkedRows(sorted.length);
+  const paged = sorted.slice(0, visibleGroups);
 
   /** One ⋮-menu action on a collateral-group row (shape the shared
       DotsMenu/EntryGroupTable expect). */
@@ -287,7 +337,7 @@ export default function Dashboard() {
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
       {/* Headline numbers — refreshed with every change to the books */}
-      <InsightsBar insights={insights} tab={filter} />
+      <InsightsBar insights={insights} tab={filter} loading={loading} />
 
       {/* Toolbar: filter + view + search on the left, actions on the right.
           Wraps instead of squeezing when the window is narrow. */}
@@ -396,6 +446,10 @@ export default function Dashboard() {
           <EntryGroupTable
             groups={paged}
             actions={canEdit() ? actionsFor : undefined}
+            loading={loading}
+            showReleased={filter !== "Active"}
+            sort={sort}
+            onSort={onSort}
             onEditEntry={setEditing} // edit one lend (row ⋮ Edit, or a sub-lend here)
             flash={flash}
           />
@@ -408,6 +462,7 @@ export default function Dashboard() {
           <GridTable
             groups={paged}
             customers={customers}
+            loading={loading}
             readOnly={!canEdit()}
             flash={flash}
             onUpdate={(id, patch) => patchRow("lend", id, patch)}

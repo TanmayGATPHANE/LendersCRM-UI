@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Skeleton, SkeletonRows } from "../components/Skeleton.tsx";
 import {
   fetchReportCustomers, fetchReportReleases, fetchReportSummary,
 } from "../api/client.ts";
@@ -54,8 +55,7 @@ export default function Reports() {
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [customers, setCustomers] = useState<CustomerReportRow[]>([]);
   const [releases, setReleases] = useState<ReleaseReportRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  // One shared open/closed state for every chart card on the page —
+  const [loading, setLoading] = useState(true);  // One shared open/closed state for every chart card on the page —
   // expanding one expands all of them (Summary's two charts move
   // together), collapsing one collapses all. Starts collapsed, like the
   // cards' own default.
@@ -184,8 +184,21 @@ export default function Reports() {
         )}
 
         {loading ? (
-          <div className="flex min-h-40 shrink-0 items-center justify-center rounded-xl border border-line bg-card text-sm text-muted shadow-sm">
-            Loading…
+          <div className="max-h-[60vh] shrink-0 overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+            <div className="table w-full text-sm">
+              <thead>
+                <tr className="border-b border-line">
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <th key={i} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                      <Skeleton className="h-3 w-16" />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonRows rows={8} cols={7} />
+              </tbody>
+            </div>
           </div>
         ) : tab === "Summary" ? (
           <div className="max-h-[60vh] shrink-0 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">

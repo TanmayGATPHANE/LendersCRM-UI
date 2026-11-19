@@ -6,6 +6,7 @@ import useDateRange from "../utils/useDateRange.ts";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { selectCls } from "../components/ui.ts";
 import { istWhen } from "../utils/format.ts";
+import { SkeletonRows } from "../components/Skeleton.tsx";
 
 /**
  * Activity — the audit trail (§10), Admin only: every add, edit, partial
@@ -134,6 +135,10 @@ export default function Activity() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {loading ? (
+              <SkeletonRows rows={10} cols={4} />
+            ) : (
+            <>
             {page.map((r) => (
               <tr key={r.id} className="hover:bg-tint even:bg-tint/40">
                 <td className="px-3 py-2 whitespace-nowrap text-xs text-slate">{when(r.atUtc)}</td>
@@ -154,6 +159,8 @@ export default function Activity() {
                     : "Nothing recorded yet — actions land here as the books change."}
                 </td>
               </tr>
+            )}
+            </>
             )}
           </tbody>
         </table>

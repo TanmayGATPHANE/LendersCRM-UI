@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import DotsMenu from "../components/DotsMenu.tsx";
 import AddUserDialog from "../components/dialogs/AddUserDialog.tsx";
 import ChangeRoleDialog from "../components/dialogs/ChangeRoleDialog.tsx";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton.tsx";
 import { fetchUsers, addUser, updateUser } from "../api/client.ts";
 import type { Role, UserItem } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
@@ -18,9 +19,13 @@ export default function Users() {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [reassigning, setReassigning] = useState<UserItem | null>(null); // Change Role dialog (§2)
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchUsers().then(setUsers).catch((e: unknown) => toast((e as Error).message));
+    fetchUsers()
+      .then(setUsers)
+      .catch((e: unknown) => toast((e as Error).message))
+      .finally(() => setLoading(false));
   }, []);
 
   // Case-insensitive filter over name and email.
@@ -81,6 +86,8 @@ export default function Users() {
       {/* Users — cards on phones, the table from md up */}
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         <div className="stagger space-y-2 p-3 md:hidden">
+          {loading ? <SkeletonCards count={2} /> : (
+          <>
           {shown.map((u) => (
             <div key={u.id} className="rounded-xl border border-line p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -110,6 +117,8 @@ export default function Users() {
           {shown.length === 0 && (
             <p className="py-10 text-center text-sm text-muted">No users found.</p>
           )}
+          </>
+          )}
         </div>
 
         <table className="hidden w-full min-w-[560px] text-sm md:table">
@@ -123,6 +132,10 @@ export default function Users() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {loading ? (
+              <SkeletonRows rows={4} cols={5} />
+            ) : (
+            <>
             {shown.map((u) => (
               <tr key={u.id} className="hover:bg-tint">
                 <td className="px-3 py-2">{u.name}</td>
@@ -161,6 +174,8 @@ export default function Users() {
                   No users found.
                 </td>
               </tr>
+            )}
+            </>
             )}
           </tbody>
         </table>

@@ -97,6 +97,19 @@ async function http<T>(path: string, { method = "GET", body }: { method?: string
   return res.status === 204 ? (null as T) : ((await res.json()) as T);
 }
 
+/** In-flight dedupe for GETs: two components asking for the same list at
+    the same moment (the Dashboard's refresh and the header Bell) share
+    ONE request, so a page load never fires the same query twice. Only
+    while in flight — every later call re-fetches, so saves stay fresh. */
+const inflightGets = new Map<string, Promise<unknown>>();
+function httpGet<T>(path: string): Promise<T> {
+  const existing = inflightGets.get(path);
+  if (existing) return existing as Promise<T>;
+  const p = http<T>(path).finally(() => inflightGets.delete(path));
+  inflightGets.set(path, p);
+  return p;
+}
+
 /** The data layer's complete contract — the real API and the mock both
     implement this, so `USE_MOCK` really is a pure toggle. Every function
     below mirrors one endpoint in plan §6. */
@@ -189,7 +202,7 @@ const api: DataLayer = {
     return stored;
   },
 
-  fetchCustomers: () => http<Customer[]>("/api/customers"),
+  fetchCustomers: () => httpGet<Customer[]>("/api/customers"),
 
   addCustomer: ({ name, phone, address }) =>
     http<Customer>("/api/customers", { method: "POST", body: { name, phone, address } }),
@@ -200,20 +213,20 @@ const api: DataLayer = {
   ensureCustomer: (name, address) =>
     http<Customer>("/api/customers/find-or-create", { method: "POST", body: { name, address } }),
 
-  fetchEntries: () => http<Entry[]>("/api/entries"),
+  fetchEntries: () => httpGet<Entry[]>("/api/entries"),
 
-  fetchPartials: () => http<Payment[]>("/api/payments"),
+  fetchPartials: () => httpGet<Payment[]>("/api/payments"),
 
   /** ?tab=all (default) | active | released — the tab shapes the tiles. */
   fetchInsights: (tab) =>
-    http<Insights>(`/api/insights${tab && tab !== "All" ? `?tab=${tab.toLowerCase()}` : ""}`),
+    httpGet<Insights>(`/api/insights${tab && tab !== "All" ? `?tab=${tab.toLowerCase()}` : ""}`),
 
-  fetchGlobalSearch: (q) => http<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
+  fetchGlobalSearch: (q) => httpGet<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
 
   fetchCashLedger: (from, to) =>
-    http<CashLedgerItem[]>(`/api/cash-ledger?${reportWindowQuery(from, to)}`),
+    httpGet<CashLedgerItem[]>(`/api/cash-ledger?${reportWindowQuery(from, to)}`),
 
-  fetchCashTotal: () => http<number>("/api/cash-ledger/total"),
+  fetchCashTotal: () => httpGet<number>("/api/cash-ledger/total"),
 
   addManualCash: ({ date, amount, notes }) =>
     http<CashLedgerItem>("/api/cash-ledger", {
@@ -273,7 +286,7 @@ const api: DataLayer = {
     }),
 
   // Users management — Admin only (the /api/users* routes are Admin).
-  fetchUsers: () => http<UserItem[]>("/api/users"),
+  fetchUsers: () => httpGet<UserItem[]>("/api/users"),
 
   addUser: ({ name, email, password, role }) =>
     http<UserItem>("/api/users", { method: "POST", body: { name, email, password, role } }),
@@ -282,27 +295,27 @@ const api: DataLayer = {
     http<UserItem>(`/api/users/${id}`, { method: "PUT", body: patch }),
 
   fetchReportSummary: (from, to) =>
-    http<SummaryRow[]>(`/api/reports/summary?${reportWindowQuery(from, to)}`),
+    httpGet<SummaryRow[]>(`/api/reports/summary?${reportWindowQuery(from, to)}`),
 
   fetchReportCustomers: (from, to) =>
-    http<CustomerReportRow[]>(`/api/reports/customers?${reportWindowQuery(from, to)}`),
+    httpGet<CustomerReportRow[]>(`/api/reports/customers?${reportWindowQuery(from, to)}`),
 
   fetchReportReleases: (from, to) =>
-    http<ReleaseReportRow[]>(`/api/reports/releases?${reportWindowQuery(from, to)}`),
+    httpGet<ReleaseReportRow[]>(`/api/reports/releases?${reportWindowQuery(from, to)}`),
 
   fetchActivity: (userId, groupId) => {
     const p = new URLSearchParams();
     if (userId) p.set("userId", String(userId));
     if (groupId) p.set("groupId", String(groupId));
     const qs = p.toString();
-    return http<ActivityItem[]>(`/api/activity${qs ? `?${qs}` : ""}`);
+    return httpGet<ActivityItem[]>(`/api/activity${qs ? `?${qs}` : ""}`);
   },
 
   importPreview: (file, rate) => upload<ImportPreview>("/api/import/preview", file, rate, "POST"),
 
   importCommit: (file, rate) => upload<ImportResult>("/api/import/commit", file, rate, "POST"),
 
-  fetchOutsourced: () => http<OutsourcedRow[]>("/api/outsourced"),
+  fetchOutsourced: () => httpGet<OutsourcedRow[]>("/api/outsourced"),
 
   outsourceGroup: (groupId, { date, to, notes }) =>
     http<void>(`/api/groups/${groupId}/outsource`, {

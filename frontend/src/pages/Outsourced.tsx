@@ -3,6 +3,7 @@ import { fetchOutsourced, outsourceReturn, canEdit } from "../api/client.ts";
 import type { OutsourcedRow } from "../api/types.ts";
 import DotsMenu from "../components/DotsMenu.tsx";
 import { toast } from "../components/Toast.tsx";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton.tsx";
 import { primaryBtnCls, secondaryBtnCls, ghostIconBtnCls } from "../components/ui.ts";
 import { money, shortDate, today } from "../utils/format.ts";
 import { useRef } from "react";
@@ -71,9 +72,11 @@ export default function Outsourced() {
         </button>
       </div>
 
-      {/* Cards on phones, the table from md up — same shape as the other pages */}
+        {/* Cards on phones, the table from md up — same shape as the other pages */}
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         <div className="stagger space-y-2 p-3 md:hidden">
+          {loading ? <SkeletonCards count={3} /> : (
+          <>
           {rows.map((r) => (
             <div key={r.groupId} className="rounded-xl border border-line p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -99,6 +102,8 @@ export default function Outsourced() {
           {!loading && rows.length === 0 && (
             <p className="py-10 text-center text-sm text-muted">Nothing is outsourced right now.</p>
           )}
+          </>
+          )}
         </div>
 
         <table className="hidden w-full table-fixed min-w-[760px] text-sm md:table">
@@ -114,6 +119,10 @@ export default function Outsourced() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
+            {loading ? (
+              <SkeletonRows rows={6} cols={canEdit() ? 7 : 6} />
+            ) : (
+            <>
             {rows.map((r) => (
               <tr key={r.groupId} className="hover:bg-tint">
                 <td className="px-3 py-2 whitespace-nowrap text-slate">{shortDate(r.date)}</td>
@@ -140,6 +149,8 @@ export default function Outsourced() {
                   Nothing is outsourced right now — use a row's ⋮ → Outsource on the Dashboard.
                 </td>
               </tr>
+            )}
+            </>
             )}
           </tbody>
         </table>

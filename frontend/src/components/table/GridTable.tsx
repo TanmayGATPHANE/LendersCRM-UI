@@ -3,9 +3,8 @@ import type { CollateralGroup, Customer, EntryStatus } from "../../api/types.ts"
 import StatusBadge from "../StatusBadge.tsx";
 import { Field } from "../Field.tsx";
 import FlashTr, { type FlashHint } from "./FlashTr.tsx";
+import { SkeletonCards, SkeletonRows } from "../Skeleton.tsx";
 import { money, shortDate } from "../../utils/format.ts";
-import { interestFor } from "../../utils/interest.ts";
-
 /**
  * GridTable — the flat, spreadsheet-style view (Compass / Excel kind).
  * Rows are grouped BY CUSTOMER (alphabetical); inside each customer,
@@ -18,7 +17,7 @@ import { interestFor } from "../../utils/interest.ts";
  *   - Customer — moves the WHOLE collateral group to another customer,
  *     because a collateral belongs to one person: its lends and payments
  *     always travel together (see updateGroupCustomer in the API).
- *   - Paid / Interest / Type / Status are computed or lifecycle data —
+ *   - Paid / Type / Status are computed or lifecycle data —
  *     read-only on purpose (paid changes via Partial Return).
  *
  * groups — group objects from buildGroups(), already filtered; only the
@@ -68,7 +67,6 @@ interface GridRow {
   lend?: string;
   received: string; // the Received column's display text ("—" on lends)
   rate: number | null;
-  interest: string; // pre-formatted display text
   status: EntryStatus | null; // payments carry null
   released: string | null; // ISO released date, payments carry null
   notes: string;
@@ -87,15 +85,17 @@ interface Props {
   onCustomerMove: (groupId: number, customerId: number) => void | Promise<void>;
   /** The last successful save — pulses every row of that collateral. */
   flash?: FlashHint | null;
+  /** The books are loading — grey rows stand in until they arrive. */
+  loading?: boolean;
 }
 
-export default function GridTable({ groups, customers, readOnly = false, onUpdate, onPaymentUpdate, onCustomerMove, flash }: Props) {
+export default function GridTable({ groups, customers, readOnly = false, loading = false, onUpdate, onPaymentUpdate, onCustomerMove, flash }: Props) {
   // Per-column filter text (Excel-style): each column filters its own
   // rows with a contains-match, all filters combine with AND.
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
 
   // The filterable columns, in order — drives the filter row + matching.
-  const COLS = ["date", "type", "customer", "item", "lend", "received", "rate", "interest", "status", "released", "notes"];
+  const COLS = ["date", "type", "customer", "item", "lend", "received", "rate", "status", "released", "notes"];
   // A lend/payment commits through the right API given its row kind.
   const save =
     (r: GridRow) =>
@@ -120,7 +120,6 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
         amountText: money(s.amount),
         received: "—", // lend rows have nothing in the Received column
         rate: s.rate ?? null,
-        interest: money(interestFor(s)),
         status: s.status,
         released: s.releasedDate ?? null,
         notes: s.notes || "",
@@ -141,7 +140,6 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
         lend: "—", // payments never sit in the Lend column
         received: money(p.amount), // what came back, in its own column
         rate: null,
-        interest: "—",
         status: null,
         released: null,
         notes: p.notes || "",
@@ -173,7 +171,6 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
       case "lend": return r.kind === "lend" ? String(r.amount) : "";
       case "received": return r.kind === "payment" ? String(r.amount) : "";
       case "rate": return r.rate != null ? String(r.rate) : "";
-      case "interest": return r.interest;
       case "status": return r.status ?? "";
       case "released": return r.released ?? "";
       case "notes": return r.notes;
@@ -195,6 +192,8 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
     <>
       {/* Mobile: one card per movement, newest passbook order kept */}
       <div className="stagger space-y-2 p-3 md:hidden">
+        {loading ? <SkeletonCards count={5} /> : (
+        <>
         {visible.map((r) => (
           <GridCard key={r.key} r={r} />
         ))}
@@ -207,6 +206,8 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
             </span>
           </div>
         )}
+        </>
+        )}
       </div>
 
       {/* Desktop: the flat editable spreadsheet (from md up) */}
@@ -215,17 +216,16 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
         <tr>
           <th className={`${th} w-[8%]`}>Date</th>
           <th className={`${th} w-[6%]`}>Type</th>
-          <th className={`${th} w-[12%]`}>Customer</th>
-          <th className={`${th} w-[12%]`}>Item</th>
+          <th className={`${th} w-[13%]`}>Customer</th>
+          <th className={`${th} w-[13%]`}>Item</th>
           {/* Lend = what went out; Received = what came back (payments) */}
-          <th className={`${thR} w-[9%]`}>Lend</th>
-          <th className={`${thR} w-[9%]`}>Received</th>
-          <th className={`${thR} w-[5%]`}>Rate</th>
-          <th className={`${thR} w-[8%]`}>Interest</th>
-          <th className={`${th} w-[7%]`}>Status</th>
+          <th className={`${thR} w-[10%]`}>Lend</th>
+          <th className={`${thR} w-[10%]`}>Received</th>
+          <th className={`${thR} w-[6%]`}>Rate</th>
+          <th className={`${th} w-[8%]`}>Status</th>
           {/* Release date: when the collateral went back (grids only) */}
-          <th className={`${th} w-[8%]`}>Released</th>
-          <th className={th}>Notes</th>
+          <th className={`${th} w-[9%]`}>Released</th>
+          <th className={`${th} w-[17%]`}>Notes</th>
         </tr>
         {/* Per-column filter row — Excel-style, under the header labels */}
         <tr>
@@ -243,7 +243,10 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
         </tr>
       </thead>
       <tbody className="stagger divide-y divide-line">
-        {visible.map((r) => {
+        {loading ? (
+          <SkeletonRows rows={8} cols={COLS.length} />
+        ) : (
+        visible.map((r) => {
           const patch = save(r); // commit for THIS row
           const lendOnly = r.editable && r.kind === "lend";
           return (
@@ -304,8 +307,6 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
                 className={cellR}
                 onCommit={(v) => patch({ rate: v === "" ? null : v })}
               />
-              {/* Interest: computed live (§4.4), read-only */}
-              <td className={cellR}>{r.interest}</td>
               <td className={cell}>{r.status ? <StatusBadge status={r.status} /> : "—"}</td>
               <td className={`${cell} text-muted whitespace-nowrap`}>{shortDate(r.released)}</td>
               <EditCell
@@ -316,7 +317,8 @@ export default function GridTable({ groups, customers, readOnly = false, onUpdat
               />
             </FlashTr>
           );
-        })}
+        })
+        )}
         {visible.length === 0 && (
           <tr>
             <td colSpan={11} className="px-3 py-12">
@@ -375,13 +377,12 @@ function GridCard({ r }: { r: GridRow }) {
         )}
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <Field label={r.type === "Payment" ? "Received" : "Lent"}
                tone={r.type === "Payment" ? "out" : "ink"}>
           {r.type === "Payment" ? `−${r.received}` : r.amountText ?? "—"}
         </Field>
         <Field label="Rate" tone="muted">{r.rate != null ? `${r.rate}%/mo` : "—"}</Field>
-        <Field label="Interest" tone="muted">{r.interest || "—"}</Field>
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted">

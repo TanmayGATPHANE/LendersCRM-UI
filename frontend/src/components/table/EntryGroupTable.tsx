@@ -6,10 +6,11 @@ import StatusBadge from "../StatusBadge.tsx";
 import { Field } from "../Field.tsx";
 import GroupHistory from "./GroupHistory.tsx";
 import GroupRow from "./GroupRow.tsx";
+import { Skeleton, SkeletonRows, SkeletonCards } from "../Skeleton.tsx";
 import type { FlashHint } from "./FlashTr.tsx";
 import { money, shortDate } from "../../utils/format.ts";
 import { buildLedger } from "../../utils/ledger.ts";
-import { groupRateText, groupInterest } from "../../utils/grouping.ts";
+import { groupRateText } from "../../utils/grouping.ts";
 
 /**
  * EntryGroupTable — the collateral-groups table (one row per collateral),
@@ -20,6 +21,10 @@ import { groupRateText, groupInterest } from "../../utils/grouping.ts";
  * groups   — group objects from utils/grouping.js buildGroups()
  * actions  — optional function(group) -> DotsMenu items; when absent the
  *            table renders without the Actions column (read-only).
+ * loading  — while the books load, grey blocks stand where the rows will;
+ *            the empty state appears only once the data has arrived.
+ * showReleased — when false (the Active tab) the Released column drops
+ *            out: on still-open collateral it only ever says "—".
  * onEditEntry — optional callback(entry) for editing one individual lend
  *            (a sub-lend too) from its row in the expanded ledger.
  */
@@ -27,32 +32,160 @@ interface Props {
   groups: CollateralGroup[];
   /** Per-group ⋮ items; absent → no Actions column (read-only view). */
   actions?: (group: CollateralGroup) => MenuItem[];
+  /** The books are loading — grey rows stand in until they arrive. */
+  loading?: boolean;
+  /** Show the Released column? (Active tab: no — nothing is released.) */
+  showReleased?: boolean;
   /** Edit one individual lend (a sub-lend too) from its ledger row. */
   onEditEntry?: (entry: Entry) => void;
   /** The last successful save (Dashboard only) — pulses that group's row. */
   flash?: FlashHint | null;
+  /** The active sort (the header shows its arrow); ascending by date. */
+  sort?: SortSpec;
+  /** Header click: switch the sorted column (or flip its direction). */
+  onSort?: (col: SortCol) => void;
 }
 
-export default function EntryGroupTable({ groups, actions, onEditEntry, flash }: Props) {
+/** The columns whose headers sort the table (click = toggle asc/desc). */
+export type SortCol = "date" | "amount" | "customer" | "rate" | "status";
+export type SortSpec = { col: SortCol; dir: "asc" | "desc" };
+
+/** Excel-style column widths, remembered per browser: drag a header's
+    right edge to resize, double-click the edge to reset. The key keeps
+    the dashboard's (and the history modal's) arrangement between loads. */
+const COL_WIDTH_KEY = "ams-groups-col-widths";
+
+function loadColWidths(): Record<string, number> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COL_WIDTH_KEY) ?? "{}") as Record<string, number>;
+    return typeof parsed === "object" && parsed ? parsed : {};
+  } catch { return {}; }
+}
+
+const COL_MIN = 56;   // no column ever collapses away
+const COL_MAX = 720;  // one column can't swallow the whole table
+
+export default function EntryGroupTable({ groups, actions, loading = false, showReleased = true, onEditEntry, flash, sort, onSort }: Props) {
   const [expand, setExpand] = useState<number[]>([]); // groupIds currently expanded
+  const [colWidths, setColWidths] = useState<Record<string, number>>(loadColWidths);
+
+  /** Drag a header's right edge: the live width rides DIRECTLY on the
+      DOM <th> (no re-render per mousemove; the table's auto layout
+      re-balances the other columns immediately), anchored at the edge
+      like Excel's — only the final width is committed on mouse-up. */
+  function startColumnDrag(e: React.MouseEvent, col: string, th: HTMLTableCellElement): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const anchor = th.getBoundingClientRect().left; // resize FROM the edge
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent): void => {
+      th.style.width = `${Math.max(COL_MIN, Math.min(COL_MAX, ev.clientX - anchor))}px`;
+    };
+    const onUp = (): void => {
+      const final = parseFloat(th.style.width);
+      if (final > 0) {
+        setColWidths((prev) => {
+          const next = { ...prev, [col]: final };
+          try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(next)); } catch { /* widths just don't persist */ }
+          return next;
+        });
+      }
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  /** Double-click a header edge: that column returns to its content size. */
+  function resetColumnDrag(col: string): void {
+    setColWidths((prev) => {
+      const next = { ...prev };
+      delete next[col];
+      try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(next)); } catch { /* widths just don't persist */ }
+      return next;
+    });
+  }
 
   /** Flip one group between expanded and collapsed. */
-  function toggle(id: number) {
+  function toggle(id: number): void {
     setExpand((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
 
-  // text-left matters: <th> defaults to centered. table-fixed + width
-  // percentages lock the grid so expanding a row can never move the
-  // other columns — the header stays in sync with the data at all times.
-  const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted";
-  const thR = `${th} text-right`;
+  // The column budget: Date · Amount · Customer · Item · Rate · Status
+  // (+ Released when shown) (+ Actions), and the expanded ledger row
+  // spans exactly what the headline row shows.
+  const colSpan = 6 + (showReleased ? 1 : 0) + (actions ? 1 : 0);
+
+  // text-left matters: <th> defaults to centered. Layout is content-
+  // sized; every header carries a drag handle (except the ⋮-only one).
+  const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted relative";
+
+  /** The header's resize handle: grab the right edge to drag, double-
+      click to reset. Stops propagation so sorting never fires. */
+  function resizeHandle(col: string) {
+    return (
+      <span
+        onMouseDown={(e) => e.currentTarget.parentElement && startColumnDrag(e, col, e.currentTarget.parentElement as HTMLTableCellElement)}
+        onDoubleClick={(e) => { e.stopPropagation(); resetColumnDrag(col); }}
+        onClick={(e) => e.stopPropagation()}
+        title="Drag to resize · double-click to reset"
+        className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 transition-colors duration-150"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  /** A sortable header: click cycles asc → desc → asc (per column, the
+      other columns' arrows do not move it off its own toggle). */
+  function sortable(col: SortCol, label: string) {
+    const active = sort?.col === col;
+    const wide = colWidths[col];
+    return (
+      <th
+        onClick={onSort ? () => onSort(col) : undefined}
+        style={wide ? { width: `${wide}px` } : undefined}
+        className={`${th} ${onSort ? "cursor-pointer select-none hover:text-ink transition-colors duration-300 ease-brand" : ""}`}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <i
+            className={`ph ${active ? (sort?.dir === "asc" ? "ph-caret-up" : "ph-caret-down") : "ph-caret-up-down"} text-xs ${
+              active ? "text-primary" : "text-dim"
+            }`}
+            aria-hidden="true"
+          />
+        </span>
+        {resizeHandle(col)}
+      </th>
+    );
+  }
+
+  /** A plain (non-sorting) header, resizable like the rest. */
+  function header(col: string, label: string, className = "") {
+    const wide = colWidths[col];
+    return (
+      <th
+        style={wide ? { width: `${wide}px` } : undefined}
+        className={`${th} ${className} whitespace-nowrap`}
+      >
+        {label}
+        {resizeHandle(col)}
+      </th>
+    );
+  }
 
   return (
     <>
       {/* Mobile: each collateral as a card (under md) */}
       <div className="stagger space-y-2 p-3 md:hidden">
+        {loading ? <SkeletonCards count={5} /> : (
+        <>
         {groups.map((g) => (
           <GroupCard
             key={g.groupId}
@@ -72,24 +205,31 @@ export default function EntryGroupTable({ groups, actions, onEditEntry, flash }:
             </span>
           </div>
         )}
+        </>
+        )}
       </div>
 
-      {/* Desktop: the fixed-column table (from md up) */}
-      <table className="hidden w-full table-fixed min-w-[820px] text-sm md:table">
+      {/* Desktop table: content-sized layout; every header carries the
+          Excel drag handle (right edge) — drag to resize, double-click
+          to reset, the arrangement is remembered per browser. */}
+      <table className="hidden w-full text-sm md:table">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
-          <th className={`${th} w-[10%]`}>Date</th>
-          <th className={`${th} w-[16%]`}>Customer Name</th>
-          <th className={`${th} w-[19%]`}>Collateral Item</th>
-          <th className={`${thR} w-[12%]`}>Amount</th>
-          <th className={`${thR} w-[7%]`}>Rate</th>
-          <th className={`${thR} w-[10%]`}>Interest</th>
-          <th className={`${th} w-[10%]`}>Status</th>
-          <th className={`${th} w-[8%]`}>Released</th>
-          {actions && <th className={`${thR} w-[8%]`}>Actions</th>}
+          {sortable("date", "Date")}
+          {sortable("amount", "Amount")}
+          {sortable("customer", "Customer")}
+          {header("item", "Collateral Item")}
+          {sortable("rate", "Rate")}
+          {sortable("status", "Status")}
+          {showReleased && header("released", "Released")}
+          {actions && header("actions", "")}
         </tr>
       </thead>
       <tbody className="stagger divide-y divide-line">
+        {loading ? (
+          <SkeletonRows rows={8} cols={colSpan} />
+        ) : (
+        <>
         {groups.map((g) => (
           <GroupRow
             key={g.groupId}
@@ -97,13 +237,14 @@ export default function EntryGroupTable({ groups, actions, onEditEntry, flash }:
             expanded={expand.includes(g.groupId)}
             onToggle={() => toggle(g.groupId)}
             actions={actions}
+            showReleased={showReleased}
             onEditEntry={onEditEntry}
             flash={flash}
           />
         ))}
         {groups.length === 0 && (
           <tr>
-            <td colSpan={actions ? 9 : 8} className="px-3 py-12">
+            <td colSpan={colSpan} className="px-3 py-12">
               <div className="flex flex-col items-center gap-1.5 text-center">
                 <i className="ph ph-package text-2xl text-dim" aria-hidden="true" />
                 <span className="text-sm text-slate">No collaterals match</span>
@@ -113,6 +254,8 @@ export default function EntryGroupTable({ groups, actions, onEditEntry, flash }:
               </div>
             </td>
           </tr>
+        )}
+        </>
         )}
       </tbody>
     </table>
@@ -159,8 +302,8 @@ function GroupCard({ group: g, expanded, onToggle, actions, onEditEntry }: {
         <StatusBadge status={g.status} />
       </div>
 
-      {/* The three money columns */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      {/* The money columns */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <Field label={g.status === "Released" ? "Collected" : "Amanat"}>
           <span className="inline-flex items-center gap-1">
             {totalText}
@@ -172,9 +315,6 @@ function GroupCard({ group: g, expanded, onToggle, actions, onEditEntry }: {
           </span>
         </Field>
         <Field label="Rate" tone="muted">{groupRateText(g) || "—"}</Field>
-        <Field label="Interest" tone="muted">
-          {g.subs.every((s) => !s.rate) && g.status === "Active" ? "—" : money(groupInterest(g))}
-        </Field>
       </div>
 
       {/* Released date + the row actions */}
