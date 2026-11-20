@@ -3,12 +3,14 @@ import type { EntryForm } from "../../api/types.ts";
 import { inputCls, labelCls } from "../ui.ts";
 
 /**
- * EntryFields — the date/amount/rate/notes grid of the entry form,
- * shared by every mode (add, sub-lend, edit). `customerNode` and
- * `itemNode` are the ready-made <input>/<select> elements decided by
- * AddEntryDialog (locked or editable per mode); a null customerNode
- * hides the customer label (e.g. pure sub-lend mode shows it in the
- * info panel instead).
+ * EntryFields — the field grid of the entry form, shared by every mode
+ * (add, sub-lend, edit). `customerNode`, `addressNode` and `itemNode`
+ * are the ready-made <input>/<select> elements decided by
+ * AddEntryDialog (locked or editable per mode). The first row is the
+ * customer with their address beside it; the item description takes the
+ * next full line; date/amount/rate/notes follow. A null customerNode or
+ * addressNode drops that cell (locked modes have no address, and the
+ * customer then takes the row on its own).
  */
 interface Props {
   form: EntryForm;
@@ -16,21 +18,30 @@ interface Props {
   set: (key: keyof EntryForm) => (e: ChangeEvent<HTMLInputElement>) => void;
   /** Rendered customer field, or null to hide it entirely. */
   customerNode: ReactNode | null;
+  /** Rendered address field beside the customer, or null in locked modes. */
+  addressNode?: ReactNode | null;
   /** Rendered item field (always rendered). */
   itemNode: ReactNode;
 }
 
-export default function EntryFields({ form, set, customerNode, itemNode }: Props) {
+export default function EntryFields({ form, set, customerNode, addressNode, itemNode }: Props) {
   return (
     <div className="grid grid-cols-2 gap-3">
       {customerNode && (
-        <label className={labelCls}>
+        <label className={`${labelCls} ${addressNode ? "" : "col-span-2"}`}>
           Customer
           <span className="mt-1 block">{customerNode}</span>
         </label>
       )}
 
-      <label className={labelCls}>
+      {addressNode && (
+        <label className={labelCls}>
+          Address
+          <span className="mt-1 block">{addressNode}</span>
+        </label>
+      )}
+
+      <label className={`${labelCls} col-span-2`}>
         Item Description
         <span className="mt-1 block">{itemNode}</span>
       </label>

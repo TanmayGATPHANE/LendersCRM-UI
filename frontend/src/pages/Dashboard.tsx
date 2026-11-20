@@ -160,6 +160,15 @@ export default function Dashboard() {
     setRefreshing(false);
   }
 
+  /** The toolbar's Reset button: every table filter back to the page's
+      opening state — Active tab, no search, all months, current year. */
+  function resetFilters(): void {
+    setFilter("Active");
+    setSearch("");
+    setMonth("all");
+    setYear(String(new Date().getFullYear()));
+  }
+
   // Grid-cell patches ride in with input-string values (the grid hands
   // EditCell's raw draft to these); the API layer coerces them to numbers.
   type LendPatch = {
@@ -238,8 +247,8 @@ export default function Dashboard() {
   }
 
   // Sort BEFORE pagination, so the visible pages follow the header. The
-  // amount column sorts by what its row shows (the collected figure on a
-  // released collateral, the main lend otherwise).
+  // amount column sorts by the principal of the main lend; Total sorts by
+  // the collected figure (release-day cash; open collaterals sort last).
   const sorted = useMemo(
     () =>
       sort.col === "date" && sort.dir === "asc"
@@ -249,10 +258,15 @@ export default function Dashboard() {
             switch (sort.col) {
               case "customer":
                 return flip * a.customerName.localeCompare(b.customerName);
-              case "amount": {
-                const av = a.status === "Released" ? (a.primary.totalCollected ?? 0) : a.primary.amount;
-                const bv = b.status === "Released" ? (b.primary.totalCollected ?? 0) : b.primary.amount;
-                return flip * (av - bv);
+              case "amount":
+                return flip * (a.primary.amount - b.primary.amount);
+              // The Total column — what was collected on the collateral
+              // (released rows); nothing collected yet sorts flat/last.
+              case "total": {
+                const at = a.status === "Released" ? (a.primary.totalCollected ?? 0) : 0;
+                const bt = b.status === "Released" ? (b.primary.totalCollected ?? 0) : 0;
+                if (at !== bt) return flip * (at - bt);
+                return flip * a.customerName.localeCompare(b.customerName);
               }
               case "rate": {
                 const ar = a.primary.rate ?? -1;
@@ -397,6 +411,15 @@ export default function Dashboard() {
           onMonth={setMonth}
           onYear={setYear}
         />
+        {/* Put every filter (tab, search, month, year) back to default. */}
+        <button
+          onClick={resetFilters}
+          className={secondaryBtnCls}
+          title="Reset all filters"
+          aria-label="Reset filters"
+        >
+          <i className="ph ph-arrow-counter-clockwise text-lg" aria-hidden="true" />
+        </button>
         {/* How many collaterals the month/year window (plus the tab and
             search filters) holds — the books at a glance. */}
         <span
@@ -406,18 +429,19 @@ export default function Dashboard() {
           {shown.length} {shown.length === 1 ? "entry" : "entries"}
         </span>
 
-        {/* Reload the table without touching the filter or search */}
+        {/* Reload the table without touching the filter or search — the
+            icon alone carries the action (tooltip + aria label name it). */}
         <button
           onClick={refreshNow}
           disabled={refreshing}
           className={secondaryBtnCls}
           title="Reload the table"
+          aria-label="Refresh"
         >
           <i
             className={`ph ph-arrows-clockwise text-lg ${refreshing ? "animate-spin" : ""}`}
             aria-hidden="true"
           />
-          Refresh
         </button>
 
         {/* Writing is Admin/Lender only — view-only accounts browse. */}

@@ -70,6 +70,8 @@ interface GridRow {
   rate: number | null;
   /** Live accrued (Active) or frozen (Released) interest per lend. */
   interest: string; // pre-formatted display text
+  /** The same figure as a NUMBER — the totals row sums it. */
+  interestValue: number;
   status: EntryStatus | null; // payments carry null
   released: string | null; // ISO released date, payments carry null
   notes: string;
@@ -129,6 +131,7 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         rate: s.rate ?? null,
         // Active: interest outstanding, accrued live (§4.4); released: frozen.
         interest: s.status === "Active" ? money(interestFor(s)) : money(s.interestCollected ?? 0),
+        interestValue: s.status === "Active" ? interestFor(s) : (s.interestCollected ?? 0),
         status: s.status,
         released: s.releasedDate ?? null,
         notes: s.notes || "",
@@ -150,6 +153,7 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         received: money(p.amount), // what came back, in its own column
         rate: null,
         interest: "—",
+        interestValue: 0,
         status: null,
         released: null,
         notes: p.notes || "",
@@ -214,6 +218,20 @@ export default function GridTable({ groups, customers, readOnly = false, loading
             <span className="text-sm text-slate">No entries in the grid</span>
             <span className="text-xs text-muted">
               Nothing matches the search / filters — try clearing them, or add an entry.
+            </span>
+          </div>
+        )}
+        {/* Totals bar — the same sums the desktop footer carries. */}
+        {visible.length > 0 && !loading && (
+          <div className="rounded-xl bg-tint p-3 text-xs text-slate">
+            <span className="font-medium uppercase tracking-wider text-muted">
+              {visible.length} of {rows.length} rows
+            </span>{" "}
+            <span className="tabular-nums text-ink">
+              · Lent {money(visible.filter((r) => r.type === "Lend").reduce((s, r) => s + r.amount, 0))} · Received{" "}
+              {money(visible.filter((r) => r.type === "Payment").reduce((s, r) => s + r.amount, 0))} ·{" "}
+              {statusTab === "Released" ? "Earned" : "Interest"}{" "}
+              {money(visible.reduce((s, r) => s + r.interestValue, 0))}
             </span>
           </div>
         )}
@@ -350,19 +368,28 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         )}
       </tbody>
       {visible.length > 0 && (
-        // Sticky sum row — totals of the rows that passed the filters.
+        // Sticky sum row — the totals of the rows that passed the filters,
+        // aligned to their columns: lends out, payments in, and the
+        // interest of exactly the rows on screen.
         <tfoot className="sticky bottom-0 z-10 bg-card border-t border-line shadow-[0_-1px_4px_rgba(0,0,0,0.04)]">
           <tr className="text-xs">
             <td colSpan={4} className="px-3 py-1.5 font-medium uppercase tracking-wider text-muted">
-              {visible.length} rows
+              {visible.length} of {rows.length} rows
             </td>
-            <td className="px-3 py-1.5 text-right font-medium text-ink">
+            <td className="px-3 py-1.5 text-right font-medium text-ink" title="Lent out in the visible rows">
               {money(visible.filter((r) => r.type === "Lend").reduce((s, r) => s + r.amount, 0))}
             </td>
-            <td className="px-3 py-1.5 text-right font-medium text-badge-ok">
+            <td className="px-3 py-1.5 text-right font-medium text-badge-ok" title="Payments received in the visible rows">
               {money(visible.filter((r) => r.type === "Payment").reduce((s, r) => s + r.amount, 0))}
             </td>
-            <td colSpan={5}></td>
+            <td className="px-3 py-1.5"></td>
+            <td
+              className="px-3 py-1.5 text-right font-medium text-green-700"
+              title={statusTab === "Released" ? "Interest earned in the visible rows" : "Outstanding interest in the visible rows"}
+            >
+              {money(visible.reduce((s, r) => s + r.interestValue, 0))}
+            </td>
+            <td colSpan={3}></td>
           </tr>
         </tfoot>
       )}

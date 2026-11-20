@@ -52,7 +52,7 @@ interface Props {
 }
 
 /** The columns whose headers sort the table (click = toggle asc/desc). */
-export type SortCol = "date" | "amount" | "customer" | "rate" | "interest" | "earned" | "status";
+export type SortCol = "date" | "amount" | "customer" | "rate" | "interest" | "earned" | "total" | "status";
 export type SortSpec = { col: SortCol; dir: "asc" | "desc" };
 
 /** The interest a RELEASED group earned — the frozen figures of its lends. */
@@ -127,11 +127,12 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
     );
   }
 
-  // The column budget: Date · Amount · Customer · Item · Rate · Interest
-  // (Active/All tabs) OR Rate→Interest Earned (Released) · Status
+  // The column budget: Date · Principal Amount · Customer · Item · Rate ·
+  // Interest (Active/All) OR Rate→Interest Earned (Released) · Total
+  // (All/Released — nothing is collected on Active) · Status
   // (+ Released when shown) (+ Actions), and the expanded ledger row
   // spans exactly what the headline row shows.
-  const colSpan = 6 + (statusTab === "Released" ? 0 : 1) + (showReleased ? 1 : 0) + (actions ? 1 : 0);
+  const colSpan = 6 + (statusTab === "Released" ? 0 : 1) + (showReleased ? 2 : 0) + (actions ? 1 : 0);
 
   // text-left matters: <th> defaults to centered. Layout is content-
   // sized; every header carries a drag handle (except the ⋮-only one).
@@ -228,7 +229,7 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
           {sortable("date", "Date")}
-          {sortable("amount", "Amount")}
+          {sortable("amount", "Principal Amount")}
           {sortable("customer", "Customer")}
           {header("item", "Collateral Item")}
           {/* Released tab: the earned interest instead of the rate — what
@@ -244,6 +245,10 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
                 {sortable("interest", "Interest")}
               </>
             )}
+          {/* Total: what was collected on the collateral (release day cash).
+              Only where collection happens — the All and Released tabs; the
+              Active tab's book is all still out. */}
+          {showReleased && sortable("total", "Total")}
           {sortable("status", "Status")}
           {showReleased && header("released", "Released")}
           {actions && header("actions", "Actions")}

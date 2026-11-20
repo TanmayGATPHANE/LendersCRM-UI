@@ -46,6 +46,9 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, showRe
   // The interest OUTSTANDING across the group's lends — the backend's
   // per-lend figure (live accrual on active, frozen once released).
   const interest = g.subs.reduce((s, x) => s + interestFor(x), 0);
+  // What actually came back on release day — the counter's cash figure
+  // when it recorded one, the lends' returned amounts otherwise.
+  const collected = g.subs.reduce((s, x) => s + (x.amountReturned ?? x.amount), 0);
   return (
     <>
       {/* Headline row: FlashTr pulses it green right after a save that
@@ -62,18 +65,13 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, showRe
             <i className={`ph ph-caret-down text-base text-dim transition-transform duration-300 ease-brand ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
           </span>
         </td>
-        {/* Amount: the MAIN lend; "+N" tops it up for the extra lends.
-            Released collaterals instead show what came back on release
-            day — actual cash when the counter recorded it. */}
+        {/* Principal Amount: the MAIN lend; "+N" tops it up for the extra
+            lends. The principal is the lent figure alone — interest lives
+            in its own column (released rows included). */}
         <td className={td}>
-          <span
-            className="inline-flex items-center gap-1.5"
-            title={g.status === "Released" ? "Collected when the collateral was released" : undefined}
-          >
-            {g.status === "Released"
-              ? money(g.primary.totalCollected ?? g.subs.reduce((s, x) => s + (x.amountReturned ?? x.amount), 0))
-              : money(g.primary.amount)}
-            {g.status !== "Released" && g.subs.length > 1 && (
+          <span className="inline-flex items-center gap-1.5">
+            {money(g.primary.amount)}
+            {g.subs.length > 1 && (
               <span className="rounded bg-tint px-1.5 py-0.5 text-xs font-medium text-primary">
                 +{g.subs.length - 1}
               </span>
@@ -106,6 +104,16 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, showRe
             {interest > 0 ? money(interest) : "—"}
           </td>
         )}
+        {/* Total: the total collected on the collateral — the cash that
+            actually came back on release day (counter figure when it was
+            recorded). Only released collaterals have one; open ones a dash.
+            Shown on the All / Released tabs (the Active tab has nothing
+            collected yet). */}
+        {showReleased && (
+          <td className={`${td} text-slate whitespace-nowrap`}>
+            {g.status === "Released" ? money(g.primary.totalCollected ?? collected) : "—"}
+          </td>
+        )}
         <td className={td}><StatusBadge status={g.status} /></td>
         {/* When released: the day the collateral came back (§3.1) — shown
             only with the Released column (hidden on the Active tab). */}
@@ -121,7 +129,7 @@ export default function GroupRow({ group: g, expanded, onToggle, actions, showRe
 
       {expanded && (
         <tr className="bg-tint/60">
-          <td colSpan={6 + (showInterest ? 1 : 0) + (showReleased ? 1 : 0) + (actions ? 1 : 0)} className="px-4 py-3">
+          <td colSpan={6 + (showInterest ? 1 : 0) + (showReleased ? 2 : 0) + (actions ? 1 : 0)} className="px-4 py-3">
             {/* The audit trail (Admin): who added / edited / released —
                 collapsed to a History icon until opened. */}
             <GroupHistory groupId={g.groupId} />

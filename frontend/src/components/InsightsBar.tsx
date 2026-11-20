@@ -84,7 +84,7 @@ function InsightsTiles({ insights, tab }: { insights: Insights; tab: string }) {
     [
       "Total Cash Available",
       insights.cashAvailable,
-      "SUM over the cash rows dated in the month/year window (whole cash table when all years show) — lends (−), partial returns, the two release legs and manual ±",
+      "SUM over the WHOLE cash table — lends (−), partial returns, the two release legs and manual ±. Unaffected by the tab, search or month/year filters",
     ],
   ];
 

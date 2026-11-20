@@ -126,6 +126,9 @@ export function mockFetchInsights(tab?: string, from?: string, to?: string): Pro
 
     // Per-tab slices — mirror InsightsService.GetAsync (active/released).
     const slice = (tab ?? "").toLowerCase();
+    // Total Cash Available is the whole stored ledger on EVERY tab — the
+    // tab (and the window) never slice it.
+    const cashInHand = cashLedger.reduce((s, l) => s + l.amount, 0);
 
     if (slice === "active") {
       const activeSubs = entries.filter((e) => e.status === "Active");
@@ -150,9 +153,7 @@ export function mockFetchInsights(tab?: string, from?: string, to?: string): Pro
       resolve({
         totalAmanat: Math.max(0, activePrincipal - receivedOnActive),
         interestEarned: interestOut,
-        // Cash the drawer gave out on active collaterals: partials back
-        // minus the lends (negative — it mirrors Total Amanat, §6).
-        cashAvailable: receivedOnActive - activePrincipal,
+        cashAvailable: cashInHand,
       });
       return;
     }
@@ -165,7 +166,7 @@ export function mockFetchInsights(tab?: string, from?: string, to?: string): Pro
       resolve({
         totalAmanat: Math.max(0, recovered),
         interestEarned: collected,
-        cashAvailable: Math.max(0, recovered) + Math.max(0, collected),
+        cashAvailable: cashInHand,
       });
       return;
     }
@@ -182,7 +183,7 @@ export function mockFetchInsights(tab?: string, from?: string, to?: string): Pro
       // Total Cash Available IS the stored ledger (§3.5): lends out
       // (negative), partials, the two rows each release posts, and
       // manual ± — no re-derivation.
-      cashAvailable: cashLedger.reduce((s, l) => s + l.amount, 0),
+      cashAvailable: cashInHand,
     });
   });
 }

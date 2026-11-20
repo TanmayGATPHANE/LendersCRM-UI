@@ -156,8 +156,7 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
   }
 
   /** Customer field: locked when joining a group or editing; in fresh
-      mode a free textbox with Google-search-style suggestions, plus an
-      address for a customer who isn't on file yet. */
+      mode a free textbox with Google-search-style suggestions. */
   function customerField() {
     if (subOf || editing)
       return <input disabled readOnly value={form.customerName}
@@ -176,6 +175,22 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
             customerAddress: c.address || f.customerAddress,
           }))
         }
+      />
+    );
+  }
+
+  /** Address field, beside the customer: only a fresh entry needs one —
+      a customer on file brings their saved address, a new one is created
+      with whatever is typed here. Locked modes show no address cell. */
+  function addressField() {
+    if (subOf || editing) return null;
+    return (
+      <input
+        value={form.customerAddress}
+        onChange={set("customerAddress")}
+        placeholder={typedPlaceholder(form, customers)}
+        className={inputCls}
+        autoComplete="off"
       />
     );
   }
@@ -211,6 +226,7 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
           form={form}
           set={set}
           customerNode={customerField()}
+          addressNode={addressField()}
           itemNode={itemField()}
         />
 
@@ -232,7 +248,7 @@ export default function AddEntryDialog({ open, entry, group, groups = [], custom
  * suggestions: as you type, customers whose name contains the text drop
  * down beneath, showing name · address · how many collaterals they have
  * active. A pick (click, or Enter on a highlighted suggestion) fills the
- * name and the saved address hint below; Escape closes. Tab and ↑/↓ walk
+ * name and the address field beside it; Escape closes. Tab and ↑/↓ walk
  * the suggestions one by one — nothing is auto-selected, whatever is
  * highlighted when Enter is hit is the pick, just like Google Search.
  * Highlighting past the last match closes the list and Tab moves on.
@@ -269,90 +285,81 @@ function CustomerSuggestions({ form, set, onPick, customers }: SuggestionsProps)
   useEffect(() => setHi(-1), [query]);
 
   return (
-    <div className="space-y-2">
-      <div className="relative">
-        <input
-          required
-          value={form.customerName}
-          onChange={set("customerName")}
-          onFocus={() => setOpenList(true)}
-          onBlur={() => setTimeout(() => setOpenList(false), 120)} // let a click land
-          onKeyDown={(e) => {
-            if (!openList) {
-              if (e.key === "ArrowDown" && matches.length > 0) setOpenList(true);
-              return;
-            }
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setHi((h) => Math.min(h + 1, matches.length - 1));
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setHi((h) => Math.max(h - 1, 0));
-            } else if (e.key === "Escape") {
-              setOpenList(false);
-            } else if (e.key === "Enter" && hi >= 0 && hi < matches.length) {
-              e.preventDefault(); // pick the highlighted one, not submit
-              pick(matches[hi]);
-            } else if (e.key === "Tab" && matches.length > 0) {
-              // Tab, like ↑, WALKS the suggestions (Shift+Tab backwards) —
-              // it never picks for you: Enter does, on whatever is
-              // highlighted. Passing the last match closes the list and
-              // the next Tab moves to the next field normally.
-              e.preventDefault();
-              if (e.shiftKey) {
-                setHi((h) => (h <= 0 ? matches.length - 1 : h - 1));
-              } else
-                setHi((h) => {
-                  const next = h + 1;
-                  if (next >= matches.length) {
-                    setOpenList(false);
-                    return -1;
-                  }
-                  return next;
-                });
-            }
-            // Enter with nothing highlighted = submit the form, as usual.
-          }}
-          placeholder="Customer name — e.g. Tanmay"
-          className={inputCls}
-          autoComplete="off"
-        />
-        {openList && matches.length > 0 && (
-          <ul
-            role="listbox"
-            className="absolute inset-x-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-line bg-card shadow-lg"
-          >
-            {matches.map((c, i) => (
-              <li key={c.id} role="option" aria-selected={i === hi}>
-                <button
-                  type="button"
-                  // Focus stays on the input (no blur), so the list never
-                  // closes between mousedown and mouseup — click lands.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(c)}
-                  onMouseMove={() => setHi(i)}
-                  className={`flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-sm ${
-                    i === hi ? "bg-tint text-ink" : "hover:bg-tint"
-                  }`}
-                >
-                  <span>
-                    {c.name}
-                    {c.address && <span className="ml-1.5 text-xs text-muted">· {c.address}</span>}
-                  </span>
-                  <span className="text-xs text-dim">{c.activeCount} active</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+    <div className="relative">
       <input
-        value={form.customerAddress}
-        onChange={set("customerAddress")}
-        placeholder={typedPlaceholder(form, customers)}
-        className={`${inputCls} text-sm`}
+        required
+        value={form.customerName}
+        onChange={set("customerName")}
+        onFocus={() => setOpenList(true)}
+        onBlur={() => setTimeout(() => setOpenList(false), 120)} // let a click land
+        onKeyDown={(e) => {
+          if (!openList) {
+            if (e.key === "ArrowDown" && matches.length > 0) setOpenList(true);
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setHi((h) => Math.min(h + 1, matches.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHi((h) => Math.max(h - 1, 0));
+          } else if (e.key === "Escape") {
+            setOpenList(false);
+          } else if (e.key === "Enter" && hi >= 0 && hi < matches.length) {
+            e.preventDefault(); // pick the highlighted one, not submit
+            pick(matches[hi]);
+          } else if (e.key === "Tab" && matches.length > 0) {
+            // Tab, like ↑, WALKS the suggestions (Shift+Tab backwards) —
+            // it never picks for you: Enter does, on whatever is
+            // highlighted. Passing the last match closes the list and
+            // the next Tab moves to the next field normally.
+            e.preventDefault();
+            if (e.shiftKey) {
+              setHi((h) => (h <= 0 ? matches.length - 1 : h - 1));
+            } else
+              setHi((h) => {
+                const next = h + 1;
+                if (next >= matches.length) {
+                  setOpenList(false);
+                  return -1;
+                }
+                return next;
+              });
+          }
+          // Enter with nothing highlighted = submit the form, as usual.
+        }}
+        placeholder="Customer name — e.g. Tanmay"
+        className={inputCls}
         autoComplete="off"
       />
+      {openList && matches.length > 0 && (
+        <ul
+          role="listbox"
+          className="absolute inset-x-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-line bg-card shadow-lg"
+        >
+          {matches.map((c, i) => (
+            <li key={c.id} role="option" aria-selected={i === hi}>
+              <button
+                type="button"
+                // Focus stays on the input (no blur), so the list never
+                // closes between mousedown and mouseup — click lands.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(c)}
+                onMouseMove={() => setHi(i)}
+                className={`flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-sm ${
+                  i === hi ? "bg-tint text-ink" : "hover:bg-tint"
+                }`}
+              >
+                <span>
+                  {c.name}
+                  {c.address && <span className="ml-1.5 text-xs text-muted">· {c.address}</span>}
+                </span>
+                <span className="text-xs text-dim">{c.activeCount} active</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
