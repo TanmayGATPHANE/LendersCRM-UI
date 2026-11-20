@@ -4,8 +4,8 @@ import DotsMenu from "../components/DotsMenu.tsx";
 import CustomerDialog from "../components/dialogs/CustomerDialog.tsx";
 import HistoryView from "../components/history/HistoryView.tsx";
 import { Skeleton, SkeletonRows, SkeletonCards } from "../components/Skeleton.tsx";
-import { fetchCustomers, fetchEntries, fetchPartials, canEdit } from "../api/client.ts";
-import type { Customer, Entry, Payment } from "../api/types.ts";
+import { fetchCustomers, fetchCustomerHistory, canEdit } from "../api/client.ts";
+import type { Customer, CustomerHistory } from "../api/types.ts";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 
@@ -18,8 +18,9 @@ import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
  */
 export default function Customers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [partials, setPartials] = useState<Payment[]>([]);
+  // One customer's passbook, fetched the first time their row expands.
+  // The page used to download every entry + partial return up front.
+  const [histories, setHistories] = useState<Record<number, CustomerHistory>>({});
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Customer | null>(null); // null = closed
   const [adding, setAdding] = useState(false);
@@ -27,20 +28,23 @@ export default function Customers() {
   // First-load skeleton: grey rows until the directory arrives.
   const [loading, setLoading] = useState(true);
 
-  // Load everything once on mount (entries/partials power the history).
+  // The directory only — a customer's passbook is fetched on expansion.
   useEffect(() => {
     let live = true;
-    Promise.all([fetchCustomers(), fetchEntries(), fetchPartials()])
-      .then(([cs, es, ps]) => {
-        if (!live) return;
-        setCustomers(cs);
-        setEntries(es);
-        setPartials(ps);
-      })
+    fetchCustomers()
+      .then((cs) => { if (live) setCustomers(cs); })
       .catch(() => { /* the skeletons stay up; the refresh surfaces errors */ })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, []);
+
+  /** Load one customer's history once (repeat expansions reuse it). */
+  function loadHistory(id: number): void {
+    if (histories[id]) return;
+    fetchCustomerHistory(id)
+      .then((h) => setHistories((cur) => ({ ...cur, [id]: h })))
+      .catch(() => { /* the expanded row shows its loading note */ });
+  }
 
   // Inbound focus from the header's global search: open the hit customer's
   // history and clear the box so it is actually visible (the search filter
@@ -54,6 +58,8 @@ export default function Customers() {
     focusApplied.current = fc;
     setSearch("");
     setExpanded((prev) => (prev.includes(fc) ? prev : [...prev, fc]));
+    loadHistory(fc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, customers]);
 
   /** Refetch after a customer is created. */
@@ -61,11 +67,14 @@ export default function Customers() {
     fetchCustomers().then(setCustomers);
   }
 
-  /** Toggle a customer's inline history between open and closed. */
+  /** Toggle a customer's inline history — fetching it on first open. */
   function toggle(id: number): void {
-    setExpanded((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    if (expanded.includes(id)) {
+      setExpanded((prev) => prev.filter((x) => x !== id));
+      return;
+    }
+    setExpanded((prev) => [...prev, id]);
+    loadHistory(id);
   }
 
   // Case-insensitive filter over name, phone and address (matches the
@@ -160,7 +169,9 @@ export default function Customers() {
               </div>
               {expanded.includes(c.id) && (
                 <div className="mt-3 rounded-lg bg-tint/60 p-2.5">
-                  <HistoryView customer={c} entries={entries} partials={partials} />
+                  {histories[c.id]
+                    ? <HistoryView customer={c} entries={histories[c.id].entries} partials={histories[c.id].payments} />
+                    : <p className="text-sm text-muted">Loading history…</p>}
                 </div>
               )}
             </div>
@@ -233,7 +244,9 @@ export default function Customers() {
                   <tr className="bg-tint/60">
                     <td colSpan={showPhone ? 4 : 3} className="px-4 py-3">
                       <div className="rounded-lg border border-line bg-card p-3">
-                        <HistoryView customer={c} entries={entries} partials={partials} />
+                        {histories[c.id]
+                          ? <HistoryView customer={c} entries={histories[c.id].entries} partials={histories[c.id].payments} />
+                          : <p className="text-sm text-muted">Loading history…</p>}
                       </div>
                     </td>
                   </tr>

@@ -15,6 +15,7 @@ import {
   mockEnsureCustomer, mockFetchEntries, mockFetchPartials, mockFetchInsights,
   mockAddPartial, mockAddEntry, mockUpdateEntry, mockUpdatePartial,
   mockUpdateGroupCustomer, mockReleaseGroup, mockFetchCashLedger, mockFetchCashTotal,
+  mockFetchGroupsPage, mockFetchGroup, mockFetchCustomerHistory,
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
   mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
   mockReportReleases, mockFetchActivity, mockImportPreview, mockImportCommit,
@@ -23,7 +24,8 @@ import {
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
   SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, ActivityItem,
-  ImportPreview, ImportResult, OutsourcedRow,
+  ImportPreview, ImportResult, OutsourcedRow, GroupsPage, GroupsPageQuery, GroupItem,
+  CustomerHistory,
 } from "./types.ts";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
@@ -117,12 +119,20 @@ interface DataLayer {
   login(email: string, password: string): Promise<AppUser>;
 
   fetchCustomers(): Promise<Customer[]>;
+  /// One customer's passbook — loaded when their history row expands.
+  fetchCustomerHistory(customerId: number): Promise<CustomerHistory>;
   addCustomer(values: { name: string; phone: string; address: string }): Promise<Customer>;
   updateCustomer(id: number, patch: Partial<Customer>): Promise<Customer>;
   ensureCustomer(name: string, address: string): Promise<Customer>;
 
   fetchEntries(): Promise<Entry[]>;
   fetchPartials(): Promise<Payment[]>;
+
+  /// The dashboard list: filtering, sorting and paging happen in SQL, so
+  /// one page (not the whole 50-year book) crosses the wire.
+  fetchGroupsPage(query: GroupsPageQuery): Promise<GroupsPage>;
+  /// One collateral with all its lends + returns (the global-search jump).
+  fetchGroup(id: number): Promise<GroupItem>;
   /** tab shapes the tiles; from/to (the month/year window) slices every
       tile by the LEND date. */
   fetchInsights(tab?: string, from?: string, to?: string): Promise<Insights>;
@@ -211,6 +221,9 @@ const api: DataLayer = {
 
   fetchCustomers: () => httpGet<Customer[]>("/api/customers"),
 
+  fetchCustomerHistory: (customerId) =>
+    httpGet<CustomerHistory>(`/api/customers/${customerId}/history`),
+
   addCustomer: ({ name, phone, address }) =>
     http<Customer>("/api/customers", { method: "POST", body: { name, phone, address } }),
 
@@ -223,6 +236,21 @@ const api: DataLayer = {
   fetchEntries: () => httpGet<Entry[]>("/api/entries"),
 
   fetchPartials: () => httpGet<Payment[]>("/api/payments"),
+
+  fetchGroupsPage: (q) => {
+    const p = new URLSearchParams();
+    if (q.tab && q.tab !== "All") p.set("tab", q.tab.toLowerCase());
+    if (q.month && q.month !== "all") p.set("month", q.month);
+    if (q.year && q.year !== "all") p.set("year", q.year);
+    if (q.search) p.set("search", q.search);
+    if (q.sort) p.set("sort", q.sort);
+    if (q.dir) p.set("dir", q.dir);
+    p.set("skip", String(q.skip ?? 0));
+    p.set("take", String(q.take ?? 50));
+    return httpGet<GroupsPage>(`/api/groups?${p.toString()}`);
+  },
+
+  fetchGroup: (id) => httpGet<GroupItem>(`/api/groups/${id}`),
 
   /** ?tab=all (default) | active | released — the tab shapes the tiles;
       from/to (the month/year window) slices them by the LEND date. */
@@ -395,11 +423,14 @@ const mock: DataLayer = {
     return user;
   },
   fetchCustomers: mockFetchCustomers,
+  fetchCustomerHistory: mockFetchCustomerHistory,
   addCustomer: mockAddCustomer,
   updateCustomer: mockUpdateCustomer,
   ensureCustomer: mockEnsureCustomer,
   fetchEntries: mockFetchEntries,
   fetchPartials: mockFetchPartials,
+  fetchGroupsPage: mockFetchGroupsPage,
+  fetchGroup: mockFetchGroup,
   fetchInsights: mockFetchInsights,
   fetchGlobalSearch: mockGlobalSearch,
   fetchCashLedger: mockFetchCashLedger,
@@ -433,11 +464,14 @@ const impl: DataLayer = USE_MOCK ? mock : api;
 /* Every export the pages use — real backend by default, mock when switched. */
 export const login = (email: string, password: string) => impl.login(email, password);
 export const fetchCustomers = () => impl.fetchCustomers();
+export const fetchCustomerHistory = (customerId: number) => impl.fetchCustomerHistory(customerId);
 export const addCustomer = (values: { name: string; phone: string; address: string }) => impl.addCustomer(values);
 export const updateCustomer = (id: number, patch: Partial<Customer>) => impl.updateCustomer(id, patch);
 export const ensureCustomer = (name: string, address: string) => impl.ensureCustomer(name, address);
 export const fetchEntries = () => impl.fetchEntries();
 export const fetchPartials = () => impl.fetchPartials();
+export const fetchGroupsPage = (query: GroupsPageQuery) => impl.fetchGroupsPage(query);
+export const fetchGroup = (id: number) => impl.fetchGroup(id);
 export const fetchInsights = (tab?: string, from?: string, to?: string) =>
   impl.fetchInsights(tab, from, to);
 export const fetchGlobalSearch = (q: string) => impl.fetchGlobalSearch(q);

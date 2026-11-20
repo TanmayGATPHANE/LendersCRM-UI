@@ -65,6 +65,10 @@ export interface CashLedgerItem {
   /** PartialReturn rows: the payment record they were booked from. */
   referenceId: number | null;
   notes: string | null;
+  /** The collateral's customer + item, joined server-side; null/absent for
+      Manual rows (optional so hand-written demo rows need not repeat it). */
+  customer?: string | null;
+  item?: string | null;
 }
 
 /** One lend as every table/dialog expects it (mirrors EntryItem). */
@@ -251,6 +255,46 @@ export interface CollateralGroup {
   outstanding: number;
   totalAmount: number;
   status: EntryStatus;
+}
+
+// ---- paged group list (GET /api/groups) ---------------------------------
+/** Dashboard list query — filters/sort/paging are applied in SQL, so the
+    browser only ever receives the current page. */
+export interface GroupsPageQuery {
+  tab?: string; // All | Active | Released ("All" is omitted on the wire)
+  month?: string; // "all" | "01".."12" (first-lend month)
+  year?: string; // "all" | "2026" (first-lend year)
+  search?: string; // matched over the WHOLE book, not the loaded page
+  sort?: string; // SortCol
+  dir?: string; // asc | desc
+  skip?: number;
+  take?: number;
+}
+
+/** One page of dashboard rows + the total the filters match + the year
+    dropdown's options. */
+export interface GroupsPage {
+  rows: CollateralGroup[];
+  total: number;
+  years: string[];
+}
+
+/** GET /api/customers/{id}/history — one customer's passbook, fetched when
+    their row expands (the page never loads the whole book). */
+export interface CustomerHistory {
+  entries: Entry[];
+  payments: Payment[];
+}
+
+/** GET /api/groups/{id} — one collateral with all its lends + returns
+    (used when the global search jumps to a group). */
+export interface GroupItem {
+  groupId: number;
+  item: string;
+  status: EntryStatus;
+  customer: { id: number; name: string; phone: string; address: string };
+  entries: Entry[];
+  payments: Payment[];
 }
 
 /** Form-state shape of the Add Entry dialog's fields. */

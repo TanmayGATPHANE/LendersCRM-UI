@@ -67,6 +67,17 @@ export default function Layout() {
   const iconCls =
     "ph text-xl transition-transform duration-300 ease-brand group-hover:translate-x-0.5";
 
+  // A nav label: fully shown on mobile and while the desktop rail is
+  // expanded; collapsed to zero width (and faded) in the 64px rail.
+  // Kept in the DOM for screen readers; focus-within expands it too, so
+  // keyboard users always see the label they are on.
+  const labelCls =
+    "max-w-40 overflow-hidden whitespace-nowrap opacity-100 transition-[max-width,opacity] duration-300 ease-brand " +
+    "lg:max-w-0 lg:opacity-0 " +
+    "lg:group-hover/nav:max-w-40 lg:group-hover/nav:opacity-100 " +
+    "lg:group-has-[:focus-visible]/nav:max-w-40 lg:group-has-[:focus-visible]/nav:opacity-100 " +
+    "motion-reduce:transition-none";
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface text-ink">
       {/* Scrim behind the mobile drawer */}
@@ -78,20 +89,30 @@ export default function Layout() {
         />
       )}
 
-      {/* Sidebar — off-canvas drawer under lg, static rail from lg up */}
+      {/* Sidebar — off-canvas drawer under lg; a 64px icon rail from lg up
+          that expands over the page on hover/focus (an overlay, so the
+          table underneath never reflows while the pointer passes through). */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col justify-between bg-card
-                    shadow-lg transition-transform duration-300 ease-brand motion-reduce:transition-none
-                    lg:static lg:z-auto lg:w-56 lg:shadow-[0_1px_8px_rgba(0,0,0,0.04)]
+        className={`fixed inset-y-0 left-0 z-50 w-64 shrink-0 bg-card shadow-lg
+                    transition-transform duration-300 ease-brand motion-reduce:transition-none
+                    lg:relative lg:z-auto lg:w-16 lg:bg-transparent lg:shadow-none
                     ${navOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
+        {/* The rail: 64px collapsed, 224px while hovered or holding focus. */}
+        <div
+          className="group/nav flex h-full w-full flex-col justify-between bg-card
+                     lg:absolute lg:inset-y-0 lg:left-0 lg:z-50 lg:w-16 lg:overflow-hidden
+                     lg:shadow-[0_1px_8px_rgba(0,0,0,0.06)]
+                     lg:transition-[width] lg:duration-300 lg:ease-brand
+                     lg:hover:w-56 lg:has-[:focus-visible]:w-56 motion-reduce:transition-none"
+        >
         <div>
           <div className="flex h-12 items-center gap-2.5 px-4 border-b border-line">
             {/* Logo tile — the app's mark, reused in favicon.svg */}
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-on-primary">
               <span className="text-base font-semibold">₹</span>
             </span>
-            <div className="leading-tight">
+            <div className={`leading-tight ${labelCls}`}>
               <span className="block font-semibold tracking-tight">AMS</span>
               <span className="block whitespace-nowrap text-xs uppercase tracking-wider text-muted">
                 Amanat Management
@@ -107,43 +128,48 @@ export default function Layout() {
             </button>
           </div>
           <nav className="flex flex-col gap-1 p-2 pt-3">
-            <NavLink to="/" end className={linkClass}>
+            <NavLink to="/" end className={linkClass} title="Dashboard">
               <i className={`${iconCls} ph-squares-four`} aria-hidden="true" />
-              Dashboard
+              <span className={labelCls}>Dashboard</span>
             </NavLink>
-            <NavLink to="/customers" className={linkClass}>
+            <NavLink to="/customers" className={linkClass} title="Customers">
               <i className={`${iconCls} ph-users`} aria-hidden="true" />
-              Customers
+              <span className={labelCls}>Customers</span>
             </NavLink>
-            <NavLink to="/cash" className={linkClass}>
+            <NavLink to="/cash" className={linkClass} title="Cash">
               <i className={`${iconCls} ph-coins`} aria-hidden="true" />
-              Cash
+              <span className={labelCls}>Cash</span>
             </NavLink>
-            <NavLink to="/reports" className={linkClass}>
+            <NavLink to="/reports" className={linkClass} title="Reports">
               <i className={`${iconCls} ph-chart-bar`} aria-hidden="true" />
-              Reports
+              <span className={labelCls}>Reports</span>
             </NavLink>
-            <NavLink to="/outsourced" className={linkClass}>
+            <NavLink to="/outsourced" className={linkClass} title="Outsourced">
               <i className={`${iconCls} ph-package`} aria-hidden="true" />
-              Outsourced
+              <span className={labelCls}>Outsourced</span>
             </NavLink>
             {/* Admin-only pages */}
             {user?.role === "Admin" && (
-              <NavLink to="/activity" className={linkClass}>
+              <NavLink to="/activity" className={linkClass} title="Activity">
                 <i className={`${iconCls} ph-clock-counter-clockwise`} aria-hidden="true" />
-                Activity
+                <span className={labelCls}>Activity</span>
               </NavLink>
             )}
             {user?.role === "Admin" && (
-              <NavLink to="/users" className={linkClass}>
+              <NavLink to="/users" className={linkClass} title="Users">
                 <i className={`${iconCls} ph-identification-card`} aria-hidden="true" />
-                Users
+                <span className={labelCls}>Users</span>
               </NavLink>
             )}
           </nav>
         </div>
-        <div className="p-4 bg-tint">
-          <span className="block text-xs text-muted">AMS · v0.1</span>
+        <div className="flex items-center justify-center gap-2 bg-tint p-4 lg:p-3">
+          <span
+            className="hidden h-1.5 w-1.5 rounded-full bg-line lg:block lg:group-hover/nav:hidden lg:group-has-[:focus-visible]/nav:hidden"
+            aria-hidden="true"
+          />
+          <span className={`${labelCls} block text-center text-xs text-muted`}>AMS · v0.1</span>
+        </div>
         </div>
       </aside>
 

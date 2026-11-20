@@ -5,9 +5,11 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, OutsourcedRow, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem } from "./types.ts";
+import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, OutsourcedRow, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem, GroupsPage, GroupsPageQuery, GroupItem, CollateralGroup, CustomerHistory } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
+import { buildGroups } from "../utils/grouping.ts";
+import { matchesGroup } from "../utils/search.ts";
 import { money } from "../utils/format.ts";
 
 /** Mock /api/users store — Admin seeds it with a couple of co-workers. */
@@ -85,18 +87,111 @@ export function mockEnsureCustomer(name: string, address: string): Promise<Custo
 }
 
 /** Mock GET /api/entries -> flat list joined with the customer name. */
+/** The stored mock lends, shaped like the API's EntryItem list. */
+function entryItems(): Entry[] {
+  return entries.map((e) => {
+    const c = customers.find((x) => x.id === e.customerId);
+    return { ...e, customerName: c?.name ?? "?", customerAddress: c?.address ?? "" } as Entry;
+  });
+}
+
 export function mockFetchEntries(): Promise<Entry[]> {
-  return Promise.resolve(
-    entries.map((e) => {
-      const c = customers.find((x) => x.id === e.customerId);
-      return { ...e, customerName: c?.name ?? "?", customerAddress: c?.address ?? "" } as Entry;
-    })
-  );
+  return Promise.resolve(entryItems());
 }
 
 /** Mock GET /api/payments -> every partial return recorded so far. */
 export function mockFetchPartials(): Promise<Payment[]> {
   return Promise.resolve([...partials]);
+}
+
+/** The sort keys the paged list orders by — mirrors the backend's SQL. */
+function sortKey(g: CollateralGroup, col: string): number | string {
+  switch (col) {
+    case "customer": return g.customerName.toLowerCase();
+    case "amount": return g.primary.amount;
+    case "rate": return g.primary.rate ?? -1;
+    case "total": return g.status === "Released" ? (g.primary.totalCollected ?? 0) : 0;
+    case "earned": return g.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
+    case "interest": return g.subs.reduce((s, x) => s + (x.interest ?? 0), 0);
+    case "status": return g.status === "Active" ? 0 : 1;
+    default: return g.date;
+  }
+}
+
+/**
+ * Mock GET /api/groups — the dashboard's paged list. The real API runs
+ * these filters/sorts in SQL; the demo mirrors them over the small
+ * in-memory book so both return the same page shape.
+ */
+export function mockFetchGroupsPage(query: GroupsPageQuery): Promise<GroupsPage> {
+  const tab = query.tab ?? "All";
+  const month = query.month ?? "all";
+  const year = query.year ?? "all";
+  const search = query.search ?? "";
+  const skip = Math.max(0, query.skip ?? 0);
+  const take = Math.min(200, Math.max(1, query.take ?? 50));
+
+  const matched = buildGroups(entryItems(), partials).filter((g) => {
+    if (tab !== "All" && g.status !== tab) return false;
+    if (!matchesGroup(g, search)) return false;
+    if (year !== "all" && g.date.slice(0, 4) !== year) return false;
+    if (month !== "all" && g.date.slice(5, 7) !== month) return false;
+    return true;
+  });
+
+  const dir = query.dir === "desc" ? -1 : 1;
+  const col = query.sort ?? "date";
+  const ordered = [...matched].sort((a, b) => {
+    const ka = sortKey(a, col);
+    const kb = sortKey(b, col);
+    const primary = typeof ka === "string"
+      ? dir * String(ka).localeCompare(String(kb))
+      : dir * (Number(ka) - Number(kb));
+    if (primary !== 0) return primary;
+    return dir * a.customerName.localeCompare(b.customerName);
+  });
+
+  const years = [...new Set([
+    ...entries.map((e) => e.date.slice(0, 4)),
+    ...partials.map((p) => p.date.slice(0, 4)),
+  ])].filter(Boolean).sort().reverse();
+
+  return Promise.resolve({
+    rows: ordered.slice(skip, skip + take),
+    total: ordered.length,
+    years,
+  });
+}
+
+/** Mock GET /api/customers/{id}/history — one customer's passbook. */
+export function mockFetchCustomerHistory(customerId: number): Promise<CustomerHistory> {
+  const mine = entryItems().filter((e) => e.customerId === customerId);
+  const groupIds = new Set(mine.map((e) => e.groupId));
+  return Promise.resolve({
+    entries: mine,
+    payments: partials.filter((p) => groupIds.has(p.groupId)),
+  });
+}
+
+/** Mock GET /api/groups/{id} — one collateral with its lends + returns. */
+export function mockFetchGroup(groupId: number): Promise<GroupItem> {
+  const mine = entryItems().filter((e) => e.groupId === groupId);
+  if (mine.length === 0) return Promise.reject(new Error("Collateral group not found"));
+  const g = buildGroups(mine, partials.filter((p) => p.groupId === groupId))[0];
+  const c = customers.find((x) => x.id === g.customerId);
+  return Promise.resolve({
+    groupId,
+    item: g.item,
+    status: g.status,
+    customer: {
+      id: g.customerId,
+      name: g.customerName,
+      phone: c?.phone ?? "",
+      address: c?.address ?? g.customerAddress,
+    },
+    entries: g.subs,
+    payments: g.partials,
+  });
 }
 
 /** Mock GET /api/insights?tab= — the three headline numbers, re-derived
@@ -336,10 +431,19 @@ export async function mockReleaseGroup(
 /** Mock GET /api/cash-ledger?from=&to= — the rows inside the inclusive
     window (empty bounds = all time), oldest first (the page re-sorts). */
 export function mockFetchCashLedger(from?: string, to?: string): Promise<CashLedgerItem[]> {
+  // Label lending rows with their collateral (the backend joins this too).
+  const label = (x: CashLedgerItem): CashLedgerItem => {
+    if (!x.groupId) return { ...x, customer: null, item: null };
+    const primary = entryItems()
+      .filter((e) => e.groupId === x.groupId)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)[0];
+    return { ...x, customer: primary?.customerName ?? null, item: primary?.item ?? null };
+  };
   return Promise.resolve(
     [...cashLedger]
       .filter((x) => (!from || x.date >= from) && (!to || x.date <= to))
       .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+      .map(label)
   );
 }
 

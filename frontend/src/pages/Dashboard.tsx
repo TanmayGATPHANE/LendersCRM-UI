@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import AddEntryDialog from "../components/dialogs/AddEntryDialog.tsx";
 import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
@@ -9,15 +9,13 @@ import ConfirmDialog from "../components/ConfirmDialog.tsx";
 import { money, shortDate } from "../utils/format.ts";
 import EntryGroupTable, { type SortCol, type SortSpec } from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
-import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
+import { LoadMore, PAGE_SIZE } from "../components/LoadMore.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
-import { primaryBtnCls, secondaryBtnCls, inputCls, selectCls } from "../components/ui.ts";
-import { fetchCustomers, fetchEntries, fetchPartials, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, deleteEntry, deleteGroup, canEdit } from "../api/client.ts";
-import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment, SavedWhere } from "../api/types.ts";
-import { buildGroups } from "../utils/grouping.ts";
+import { primaryBtnCls, secondaryBtnCls, iconBtnCls, inputCls } from "../components/ui.ts";
+import { fetchCustomers, fetchGroupsPage, fetchGroup, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, deleteEntry, deleteGroup, canEdit } from "../api/client.ts";
+import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, SavedWhere } from "../api/types.ts";
 import { toast } from "../components/Toast.tsx";
-import { matchesGroup } from "../utils/search.ts";
 import MonthYearFilter from "../components/MonthYearFilter.tsx";
 import { windowFrom } from "../utils/format.ts";
 
@@ -38,19 +36,34 @@ const VIEWS: Array<"Groups" | "Grid"> = ["Groups", "Grid"];
  * The page itself never scrolls; only the table body does.
  */
 export default function Dashboard() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  // The dashboard's rows come PAGE BY PAGE from the API: filters, sort and
+  // skip/take run in SQL, so a 50-year book never downloads in full. `rows`
+  // is everything loaded so far; `total` is what the filters match (the
+  // count badge + the "Show more" footer).
+  const [rows, setRows] = useState<CollateralGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [years, setYears] = useState<string[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [partials, setPartials] = useState<Payment[]>([]); // partial returns (§4.6)
-  // First-load skeleton: the tables stand as grey rows until the books
-  // arrive; later refreshes keep the previous rows on screen (no flicker).
+  // First-load skeleton: the tables stand as grey rows until the first page
+  // arrives; later refreshes keep the previous rows on screen (no flicker).
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // The search the server sees — the box updates immediately, the query
+  // fires once typing settles (never on every keystroke).
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filter, setFilter] = useState<EntryFilter>("Active"); // daily work = active lends
   const [view, setView] = useState<"Groups" | "Grid">("Groups"); // Groups = ledger rows; Grid = spreadsheet
   // Month + year of the first lend — defaults, never persisted: the
   // counter's work set opens on the current year, all months visible.
   const [month, setMonth] = useState("all");
   const [year, setYear] = useState(() => String(new Date().getFullYear()));
+
+  // Column sorting — the server sorts the whole matching set, so the
+  // visible pages follow the header. A fresh column starts ascending.
+  const [sort, setSort] = useState<SortSpec>({ col: "date", dir: "asc" });
+  function onSort(col: SortCol): void {
+    setSort((s) => (s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }));
+  }
 
   // Which dialogs are open: group being released, entry being edited,
   // group receiving a sub-lend or a partial return, or a plain Add Entry.
@@ -65,33 +78,82 @@ export default function Dashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false); // Excel lending-book import (§4.7)
 
-  // Load everything once on mount — customers ride along so the Add
-  // Entry suggestions always know about customers created since.
+  // The customer directory rides along once on mount — the Add Entry
+  // suggestions need everyone on file (the rows themselves page in).
   useEffect(() => {
-    refresh();
+    fetchCustomers().then(setCustomers).catch(() => { /* suggestions stay empty */ });
   }, []);
+
+  // The box updates on every keystroke; the server query waits for the
+  // typing to settle so a search never fires per character.
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  // Live values for callbacks that run outside the page effect (a save, the
+  // Show-more footer): they must read the filters as they are right now.
+  const filterRef = useRef<EntryFilter>(filter);
+  filterRef.current = filter;
+  const rowsRef = useRef<CollateralGroup[]>([]);
+  rowsRef.current = rows;
+  // A sequence per list request: a slow older response must never overwrite
+  // a newer one (typing + a save can race).
+  const requestSeq = useRef(0);
+  // One in-flight page fetch at a time — the footer's observer can fire
+  // again before React has re-rendered.
+  const loadingMoreRef = useRef(false);
+  // True while page 1 is being fetched (a filter/search/sort change):
+  // "Show more" must not append an old page under the new filter's rows.
+  const firstPagePendingRef = useRef(false);
+  // Same guard for a post-save refresh, which replaces the loaded window.
+  const refreshPendingRef = useRef(false);
+
+  // Page one of the dashboard — refetched whenever a filter, the search or
+  // the sort changes. Filters/sort run in SQL; the browser only gets a page.
+  useEffect(() => {
+    let live = true;
+    firstPagePendingRef.current = true;
+    const seq = ++requestSeq.current;
+    fetchGroupsPage({
+      tab: filter, month, year, search: debouncedSearch,
+      sort: sort.col, dir: sort.dir, skip: 0, take: PAGE_SIZE,
+    })
+      .then((page) => {
+        if (!live || seq !== requestSeq.current) return;
+        setRows(page.rows);
+        setTotal(page.total);
+        setYears(page.years);
+        setLoading(false);
+      })
+      .catch(() => { if (live) setLoading(false); })
+      .finally(() => { if (live) firstPagePendingRef.current = false; });
+    return () => { live = false; };
+  }, [filter, month, year, debouncedSearch, sort.col, sort.dir]);
 
   // Inbound focus from the header's global search: a lend or partial-return
   // hit carries its group — switch to the All tab in group view, then
   // narrow the search box to that group's customer so its rows surface.
-  // Applied once per navigation (guards against every refresh re-applying
-  // it over the user's later edits).
+  // The group is fetched by id (it may be on a page that is not loaded).
+  // Applied once per navigation.
   const location = useLocation();
   const focusApplied = useRef<number | null>(null);
   useEffect(() => {
     const fg = (location.state as { focusGroupId?: number } | null)?.focusGroupId;
     if (fg == null || focusApplied.current === fg) return;
-    const owner = entries.find((e) => e.groupId === fg);
-    if (!owner) return; // entries not loaded yet — re-runs when they arrive
     focusApplied.current = fg;
-    setFilter("All");
-    setView("Groups");
-    // The month/year filters default to today — a focused collateral from
-    // an older month must not be filtered out of view while it is found.
-    setMonth("all");
-    setYear("all");
-    setSearch(owner.customerName);
-  }, [location.state, entries]);
+    fetchGroup(fg)
+      .then((g) => {
+        setFilter("All");
+        setView("Groups");
+        // The month/year filters default to today — a focused collateral
+        // from an older month must not be filtered out of view.
+        setMonth("all");
+        setYear("all");
+        setSearch(g.customer.name);
+      })
+      .catch(() => { focusApplied.current = null; });
+  }, [location.state]);
 
   // True while the table is being refetched — spins the Refresh button.
   const [refreshing, setRefreshing] = useState(false);
@@ -116,40 +178,62 @@ export default function Dashboard() {
     window.setTimeout(() => setFlash((cur) => (cur?.seq === seq ? null : cur)), 2600);
   }
 
-  // refresh() runs on saves/dialog closes; it must use the filter that is
-  // live at that moment, hence the ref.
-  const filterRef = useRef<EntryFilter>(filter);
-  filterRef.current = filter;
-
-  /** Refetch entries + payments + insights + the customer list from the
-      API (used by dialogs and the Refresh button below — insights update
-      on every change, and new customers must appear in the Add Entry
-      suggestions right away, not after a reload). The tiles read the
-      SAME month/year window the table shows. */
+  /** Refetch the rows already on screen (every loaded page in one request),
+      the tiles and the customer list — used after a save and by the
+      Refresh button. The reload is capped at 200 rows; past that the user
+      is deep in an infinite scroll and the next "Show more" continues. */
   async function refresh(): Promise<void> {
     const w = windowFrom(month, year);
-    const [e, p, i, c] = await Promise.all([
-      fetchEntries(), fetchPartials(), fetchInsights(filterRef.current, w.from, w.to), fetchCustomers(),
-    ]);
-    setEntries(e);
-    setPartials(p);
-    setInsights(i);
-    setCustomers(c);
-    setLoading(false);
+    const take = Math.max(PAGE_SIZE, Math.min(200, rowsRef.current.length || PAGE_SIZE));
+    const seq = ++requestSeq.current;
+    refreshPendingRef.current = true;
+    try {
+      const [page, i, c] = await Promise.all([
+        fetchGroupsPage({
+          tab: filterRef.current, month, year, search: debouncedSearch,
+          sort: sort.col, dir: sort.dir, skip: 0, take,
+        }),
+        fetchInsights(filterRef.current, w.from, w.to),
+        fetchCustomers(),
+      ]);
+      if (seq !== requestSeq.current) return;
+      setRows(page.rows);
+      setTotal(page.total);
+      setYears(page.years);
+      setInsights(i);
+      setCustomers(c);
+      setLoading(false);
+    } catch { /* a failed refresh keeps the last good rows on screen */ }
+    finally { refreshPendingRef.current = false; }
   }
 
-  /** Switching tabs or moving the month/year window refetches the tiles
-      for that view — the numbers are the API's, never computed here. The
-      first render skips this: the mount's refresh() above already fetched
-      the current tab + window, so firing again would double the request. */
-  const tabsFetched = useRef(false);
+  /** The footer's next page — appended to what is already rendered. */
+  async function loadMore(): Promise<void> {
+    if (loadingMoreRef.current || firstPagePendingRef.current || refreshPendingRef.current) return;
+    loadingMoreRef.current = true;
+    const seq = ++requestSeq.current;
+    try {
+      const page = await fetchGroupsPage({
+        tab: filterRef.current, month, year, search: debouncedSearch,
+        sort: sort.col, dir: sort.dir, skip: rowsRef.current.length, take: PAGE_SIZE,
+      });
+      if (seq !== requestSeq.current) return;
+      setRows((cur) => [...cur, ...page.rows]);
+      setTotal(page.total);
+    } catch { /* keep the rows already loaded */ }
+    finally {
+      loadingMoreRef.current = false;
+    }
+  }
+
+  // Headline tiles — backend-computed for the selected tab + window; the
+  // cash tile inside them is the whole book (filter-independent).
   useEffect(() => {
-    if (!tabsFetched.current) { tabsFetched.current = true; return; }
     let live = true;
     const w = windowFrom(month, year);
     fetchInsights(filter, w.from, w.to)
       .then((i) => { if (live) setInsights(i); })
-      .catch(() => { /* the initial refresh surfaces real errors */ });
+      .catch(() => { /* the page keeps the last good tiles */ });
     return () => { live = false; };
   }, [filter, month, year]);
 
@@ -168,6 +252,12 @@ export default function Dashboard() {
     setMonth("all");
     setYear(String(new Date().getFullYear()));
   }
+
+  // The Clear-filters control only earns toolbar space when something is
+  // actually filtered — otherwise it sits dead between the date pickers.
+  const filtersDirty =
+    filter !== "Active" || search.trim() !== "" || month !== "all" ||
+    year !== String(new Date().getFullYear());
 
   // Grid-cell patches ride in with input-string values (the grid hands
   // EditCell's raw draft to these); the API layer coerces them to numbers.
@@ -214,98 +304,8 @@ export default function Dashboard() {
     }
   }
 
-  // The years any record falls in — feeds the year dropdown; the current
-  // year always sits in the list (the default filter), even on a fresh book.
-  const years = useMemo(() => {
-    const ys = new Set<string>([String(new Date().getFullYear())]);
-    if (year !== "all") ys.add(year);
-    for (const e of entries) if (e.date) ys.add(e.date.slice(0, 4));
-    for (const p of partials) if (p.date) ys.add(p.date.slice(0, 4));
-    return [...ys].sort().reverse();
-  }, [entries, partials, year]);
-
-  // Collateral groups + global search (customer / item / date / amount)
-  // + status filter + month/year of the collateral's first lend. Both
-  // views render these same groups.
-  const shown = useMemo(
-    () => buildGroups(entries, partials).filter((g) => {
-      if (filter !== "All" && g.status !== filter) return false;
-      if (!matchesGroup(g, search)) return false;
-      const d = g.date || ""; // mm/dd land on the year the lend was made
-      if (year !== "all" && d.slice(0, 4) !== year) return false;
-      if (month !== "all" && d.slice(5, 7) !== month) return false;
-      return true;
-    }),
-    [entries, partials, search, filter, month, year]
-  );
-
-  // Column sorting — the header click sets the column (re-clicking the
-  // same one flips asc/desc); a fresh column always starts ascending.
-  const [sort, setSort] = useState<SortSpec>({ col: "date", dir: "asc" });
-  function onSort(col: SortCol): void {
-    setSort((s) => (s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }));
-  }
-
-  // Sort BEFORE pagination, so the visible pages follow the header. The
-  // amount column sorts by the principal of the main lend; Total sorts by
-  // the collected figure (release-day cash; open collaterals sort last).
-  const sorted = useMemo(
-    () =>
-      sort.col === "date" && sort.dir === "asc"
-        ? shown // the data's natural order — sort nothing
-        : [...shown].sort((a, b) => {
-            const flip = sort.dir === "desc" ? -1 : 1;
-            switch (sort.col) {
-              case "customer":
-                return flip * a.customerName.localeCompare(b.customerName);
-              case "amount":
-                return flip * (a.primary.amount - b.primary.amount);
-              // The Total column — what was collected on the collateral
-              // (released rows); nothing collected yet sorts flat/last.
-              case "total": {
-                const at = a.status === "Released" ? (a.primary.totalCollected ?? 0) : 0;
-                const bt = b.status === "Released" ? (b.primary.totalCollected ?? 0) : 0;
-                if (at !== bt) return flip * (at - bt);
-                return flip * a.customerName.localeCompare(b.customerName);
-              }
-              case "rate": {
-                const ar = a.primary.rate ?? -1;
-                const br = b.primary.rate ?? -1;
-                if (ar !== br) return flip * (ar - br);
-                return flip * a.customerName.localeCompare(b.customerName);
-              }
-              // The Released tab's Interest Earned column — the frozen figures.
-              case "earned": {
-                const ae = a.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
-                const be = b.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
-                if (ae !== be) return flip * (ae - be);
-                return flip * a.customerName.localeCompare(b.customerName);
-              }
-              // The Interest column (Active/All) — the per-lend figure the
-              // row shows: live accrual on active, frozen on released rows.
-              case "interest": {
-                const ai = a.subs.reduce((s, x) => s + (x.interest ?? 0), 0);
-                const bi = b.subs.reduce((s, x) => s + (x.interest ?? 0), 0);
-                if (ai !== bi) return flip * (ai - bi);
-                return flip * a.customerName.localeCompare(b.customerName);
-              }
-              case "status": {
-                const rank = (x: string) => (x === "Active" ? 0 : 1);
-                if (rank(a.status) !== rank(b.status)) return flip * (rank(a.status) - rank(b.status));
-                return flip * a.date.localeCompare(b.date);
-              }
-              default:
-                return flip * a.date.localeCompare(b.date);
-            }
-          }),
-    [shown, sort]
-  );
-
-  // Paged rendering — 50 groups at a time (scroll or "Show more"), so a
-  // 1,000-customer book lays out only the slice in view. The Add Entry
-  // suggestions below still see the FULL filtered list.
-  const [visibleGroups, moreGroups] = useChunkedRows(sorted.length);
-  const paged = sorted.slice(0, visibleGroups);
+  // The filter/sort/search all run on the server; the loaded `rows` are
+  // already the page(s) to render — nothing is grouped or filtered here.
 
   /** One ⋮-menu action on a collateral-group row (shape the shared
       DotsMenu/EntryGroupTable expect). */
@@ -355,117 +355,140 @@ export default function Dashboard() {
       {/* Headline numbers — refreshed with every change to the books */}
       <InsightsBar insights={insights} tab={filter} loading={loading} />
 
-      {/* Toolbar: filter + view + search on the left, actions on the right.
-          Wraps instead of squeezing when the window is narrow. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
-        {/* Toolbar: focus rings on every control (keyboard parity) */}
-        <div className="flex rounded-lg border border-line bg-card p-0.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors duration-300 ease-brand
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                filter === f ? "bg-primary text-on-primary" : "text-slate hover:bg-tint-hover"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+      {/* Toolbar — every control shares one 36px height. Filters read left
+          to right (status · view · search · date window), then the count,
+          then the actions; a hairline separates the groups. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pb-3">
+        {/* Status tab + view shape — segmented controls, one height. */}
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 items-center rounded-lg border border-line bg-card p-[3px]">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                aria-pressed={filter === f}
+                className={`h-7 rounded-md px-3 text-sm font-medium transition-colors duration-300 ease-brand
+                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  filter === f ? "bg-primary text-on-primary shadow-sm" : "text-slate hover:bg-tint-hover"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex h-9 items-center rounded-lg border border-line bg-card p-[3px]">
+            {VIEWS.map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                title={v === "Groups" ? "One row per collateral" : "Flat spreadsheet grid, one row per lend"}
+                className={`flex h-7 items-center gap-1 rounded-md px-3 text-sm font-medium transition-colors duration-300 ease-brand
+                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  view === v ? "bg-primary text-on-primary shadow-sm" : "text-slate hover:bg-tint-hover"
+                }`}
+              >
+                <i className={`ph ${v === "Groups" ? "ph-rows" : "ph-table"} text-base`} aria-hidden="true" />
+                {v}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* View shape: grouped ledger rows or the flat grid (like Compass) */}
-        <div className="flex rounded-lg border border-line bg-card p-0.5">
-          {VIEWS.map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              title={v === "Groups" ? "One row per collateral" : "Flat spreadsheet grid, one row per lend"}
-              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-md transition-colors duration-300 ease-brand
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                view === v ? "bg-primary text-on-primary" : "text-slate hover:bg-tint-hover"
-              }`}
-            >
-              <i className={`ph ${v === "Groups" ? "ph-rows" : "ph-table"} text-base`} aria-hidden="true" />
-              {v}
-            </button>
-          ))}
-        </div>
-
-        {/* The search stretches all the way to the month/year filters and
-            shrinks with the window (min keeps it typable on small rows). */}
-        <div className="min-w-40 flex-1">
+        {/* Search — grows to fill the row; the leading magnifier and the
+            clear button make its state obvious. */}
+        <div className="relative min-w-40 flex-1">
+          <i
+            className="ph ph-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-dim"
+            aria-hidden="true"
+          />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search customer, item or date…"
-            className={inputCls}
+            className={`${inputCls} pl-9 ${search ? "pr-9" : ""}`}
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              title="Clear search"
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-dim transition-colors duration-300 ease-brand
+                         hover:bg-tint-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <i className="ph ph-x text-sm" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
-        {/* Month + year of the first lend, with the filtered count beside */}
-        <MonthYearFilter
-          month={month}
-          year={year}
-          years={years}
-          onMonth={setMonth}
-          onYear={setYear}
-        />
-        {/* Put every filter (tab, search, month, year) back to default. */}
-        <button
-          onClick={resetFilters}
-          className={secondaryBtnCls}
-          title="Reset all filters"
-          aria-label="Reset filters"
-        >
-          <i className="ph ph-arrow-counter-clockwise text-lg" aria-hidden="true" />
-        </button>
-        {/* How many collaterals the month/year window (plus the tab and
-            search filters) holds — the books at a glance. */}
+        {/* Date window + Clear filters (only while something is filtered). */}
+        <div className="flex items-center gap-2">
+          <MonthYearFilter
+            month={month}
+            year={year}
+            years={years}
+            onMonth={setMonth}
+            onYear={setYear}
+          />
+          {filtersDirty && (
+            <button
+              onClick={resetFilters}
+              className={iconBtnCls}
+              title="Clear all filters"
+              aria-label="Clear all filters"
+            >
+              <i className="ph ph-funnel-x text-lg" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+
+        {/* How many collaterals the filters match — the books at a glance. */}
         <span
-          className="rounded-full bg-tint px-3 py-1.5 text-sm font-medium text-ink"
+          className="inline-flex h-9 items-center rounded-lg bg-tint px-3 text-sm font-medium text-ink"
           title="Collaterals matching these filters"
         >
-          {shown.length} {shown.length === 1 ? "entry" : "entries"}
+          {total} {total === 1 ? "entry" : "entries"}
         </span>
 
-        {/* Reload the table without touching the filter or search — the
-            icon alone carries the action (tooltip + aria label name it). */}
-        <button
-          onClick={refreshNow}
-          disabled={refreshing}
-          className={secondaryBtnCls}
-          title="Reload the table"
-          aria-label="Refresh"
-        >
-          <i
-            className={`ph ph-arrows-clockwise text-lg ${refreshing ? "animate-spin" : ""}`}
-            aria-hidden="true"
-          />
-        </button>
-
-        {/* Writing is Admin/Lender only — view-only accounts browse. */}
-        {canEdit() && (
-          <>
-            <button onClick={() => setShowImport(true)} className={secondaryBtnCls} title="Import a yearly Excel lending book">
-              <i className="ph ph-microsoft-excel-logo text-lg" aria-hidden="true" />
-              Import
-            </button>
-            <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
-              <i className="ph ph-plus text-lg" aria-hidden="true" />
-              Add Entry
-            </button>
-          </>
-        )}
+        {/* Actions: reload, then writing (Admin/Lender only). */}
+        <div className="flex items-center gap-2">
+          <span className="hidden h-6 w-px bg-line sm:block" aria-hidden="true" />
+          <button
+            onClick={refreshNow}
+            disabled={refreshing}
+            className={iconBtnCls}
+            title="Reload the table"
+            aria-label="Refresh"
+          >
+            <i
+              className={`ph ph-arrows-clockwise text-lg ${refreshing ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+          {canEdit() && (
+            <>
+              <button onClick={() => setShowImport(true)} className={secondaryBtnCls} title="Import a yearly Excel lending book">
+                <i className="ph ph-microsoft-excel-logo text-lg" aria-hidden="true" />
+                Import
+              </button>
+              <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
+                <i className="ph ph-plus text-lg" aria-hidden="true" />
+                Add Entry
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Entries region — the only scrolling region on this page. Both
-          views show the already-filtered `shown` groups; only the shape
-          changes (grouped rows vs flat grid). */}
+          views render the loaded pages of server-filtered rows; only the
+          shape changes (grouped rows vs flat grid). */}
       {view === "Groups" ? (
         <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <EntryGroupTable
-            groups={paged}
+            groups={rows}
             actions={canEdit() ? actionsFor : undefined}
             loading={loading}
             showReleased={filter !== "Active"}
@@ -476,14 +499,14 @@ export default function Dashboard() {
             onDeleteEntry={setDeletingEntry} // §4.9 — delete one lend from its ledger row
             flash={flash}
           />
-          <LoadMore visible={visibleGroups} total={shown.length} onMore={moreGroups} />
+          <LoadMore visible={rows.length} total={total} onMore={loadMore} />
         </div>
       ) : (
         // Flat grid — same data, one row per lend, sorted by customer,
         // every data column editable in the cell.
         <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
           <GridTable
-            groups={paged}
+            groups={rows}
             customers={customers}
             loading={loading}
             readOnly={!canEdit()}
@@ -493,7 +516,7 @@ export default function Dashboard() {
             onPaymentUpdate={(id, patch) => patchRow("payment", id, patch)}
             onCustomerMove={moveGroup}
           />
-          <LoadMore visible={visibleGroups} total={shown.length} onMore={moreGroups} />
+          <LoadMore visible={rows.length} total={total} onMore={loadMore} />
         </div>
       )}
 
@@ -502,7 +525,7 @@ export default function Dashboard() {
         open={showAdd || Boolean(editing) || Boolean(subGroup)}
         entry={editing || undefined}
         group={subGroup || undefined}
-        groups={shown.filter((g) => g.status === "Active")}
+        groups={rows.filter((g) => g.status === "Active")}
         customers={customers}
         onClose={() => { setShowAdd(false); setEditing(null); setSubGroup(null); }}
         onSaved={onSaved}

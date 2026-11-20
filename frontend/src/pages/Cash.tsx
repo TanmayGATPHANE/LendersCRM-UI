@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addManualCash, canEdit, deleteCashEntry, fetchCashLedger, fetchCashTotal, fetchEntries,
+  addManualCash, canEdit, deleteCashEntry, fetchCashLedger, fetchCashTotal,
 } from "../api/client.ts";
-import type { CashLedgerItem, Entry } from "../api/types.ts";
+import type { CashLedgerItem } from "../api/types.ts";
 import CashEntryDialog from "../components/dialogs/CashEntryDialog.tsx";
 import ConfirmDialog from "../components/ConfirmDialog.tsx";
 import { SkeletonCards, SkeletonRows } from "../components/Skeleton.tsx";
@@ -48,7 +48,6 @@ interface CashRow {
 
 export default function Cash() {
   const [ledger, setLedger] = useState<CashLedgerItem[]>([]);
-  const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
   // Month/year like the Dashboard's — defaults current year, all months,
   // never persisted; both "all" opens the whole book.
@@ -68,11 +67,10 @@ export default function Cash() {
     // Only the window's slice comes over the wire; "in hand" is the
     // whole-book SUM from its own endpoint.
     const { from, to } = windowFrom(month, year);
-    const [rows, es, cashInHand] = await Promise.all([
-      fetchCashLedger(from, to), fetchEntries(), fetchCashTotal(),
+    const [rows, cashInHand] = await Promise.all([
+      fetchCashLedger(from, to), fetchCashTotal(),
     ]);
     setLedger(rows);
-    setEntries(es);
     setInHand(cashInHand);
     setLoading(false);
   }
@@ -95,32 +93,23 @@ export default function Cash() {
     }
   }
 
-  // Join each lending row with its collateral (customer · item) for the
-  // Source column; manual rows stand alone — they are outside the business.
-  const rows = useMemo(() => {
-    const byGroup = new Map<number, Entry>();
-    for (const e of entries) {
-      const existing = byGroup.get(e.groupId);
-      if (!existing || e.date < existing.date) byGroup.set(e.groupId, e);
-    } // keep the earliest lend — the group's headline
-
-    return ledger
-      .map<CashRow>((l) => {
-        const g = l.groupId ? byGroup.get(l.groupId) : undefined;
-        const label = SOURCE_LABEL[l.source];
-        return {
-          date: l.date,
-          amount: l.amount,
-          label,
-          who: g ? `${g.customerName} · ${g.item}` : "Outside the business",
-          notes: l.notes || "",
-          row: l,
-        };
-      })
+  // The customer · item label is joined SERVER-SIDE (the cash page never
+  // loads the entries table); manual rows stand alone — they are outside
+  // the business.
+  const rows = useMemo(() =>
+    ledger
+      .map<CashRow>((l) => ({
+        date: l.date,
+        amount: l.amount,
+        label: SOURCE_LABEL[l.source],
+        who: l.customer ? `${l.customer} · ${l.item ?? ""}`.replace(/ · $/, "") : "Outside the business",
+        notes: l.notes || "",
+        row: l,
+      }))
       .sort((a, b) =>
         b.date.localeCompare(a.date) || a.row.id - b.row.id
-      ); // newest day first; within one day the id keeps book order
-  }, [ledger, entries]);
+      ), // newest day first; within one day the id keeps book order
+    [ledger]);
 
   // Search over the source text, who paid and the notes; the month/year
   // window scopes the view (the API already returned just that slice —
