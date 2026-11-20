@@ -102,7 +102,8 @@ export function mockFetchPartials(): Promise<Payment[]> {
 /** Mock GET /api/insights?tab= — the three headline numbers, re-derived
     on every call with the same formulas the backend owns (§6); `tab`
     slices them per status exactly like InsightsService.GetAsync. */
-export function mockFetchInsights(tab?: string): Promise<Insights> {
+export function mockFetchInsights(tab?: string, from?: string, to?: string): Promise<Insights> {
+  void from; void to; // the demo book is tiny; the window shapes nothing
   return new Promise((resolve) => {
     // Financial year window — Indian FY runs 1 April to 31 March.
     const now = new Date();
@@ -654,6 +655,7 @@ export async function mockImportPreview(file: File): Promise<ImportPreview> {
     fileName: file.name,
     sheets: [],
     sheetUsed: "—",
+    kind: "Active",
     groups: [],
     warnings: ["Excel import needs the real API — demo mode has no server to parse with."],
   });
@@ -675,4 +677,13 @@ export async function mockOutsourceGroup(): Promise<void> {
 
 export async function mockOutsourceReturn(): Promise<void> {
   throw new Error("Outsourcing runs on the real API — demo mode has no server.");
+}
+
+/** Deletion (§4.9) — demo mode has no server to archive on. */
+export async function mockDeleteEntry(): Promise<void> {
+  throw new Error("Deletion runs on the real API — demo mode has no server.");
+}
+
+export async function mockDeleteGroup(): Promise<void> {
+  throw new Error("Deletion runs on the real API — demo mode has no server.");
 }

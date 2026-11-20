@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Skeleton, SkeletonRows } from "../components/Skeleton.tsx";
 import {
   fetchReportCustomers, fetchReportReleases, fetchReportSummary,
 } from "../api/client.ts";
 import type { CustomerReportRow, ReleaseReportRow, SummaryRow } from "../api/types.ts";
-import { money } from "../utils/format.ts";
+import { fmtISO, money, windowFrom } from "../utils/format.ts";
 import { toast } from "../components/Toast.tsx";
-import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
-import useDateRange from "../utils/useDateRange.ts";
+import MonthYearFilter from "../components/MonthYearFilter.tsx";
 import NetLine from "../components/viz/NetLine.tsx";
 import RankedBars from "../components/viz/RankedBars.tsx";
 import TrendColumns from "../components/viz/TrendColumns.tsx";
@@ -50,27 +49,35 @@ type ReportTab = (typeof TABS)[number];
 export default function Reports() {
   const [tab, setTab] = useState<ReportTab>("Summary");
 
-  // Each tab fetches lazily and keeps its rows; the global date-range
-  // picker re-runs the active tab's fetch. All time = the whole book.
+  // Each tab fetches lazily and keeps its rows; the month/year filters
+  // re-run the active tab's fetch. Defaults: current year, all months
+  // (never persisted — every open starts fresh on the defaults).
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [customers, setCustomers] = useState<CustomerReportRow[]>([]);
   const [releases, setReleases] = useState<ReleaseReportRow[]>([]);
-  const [loading, setLoading] = useState(true);  // One shared open/closed state for every chart card on the page —
+  const [loading, setLoading] = useState(true);
+  // One shared open/closed state for every chart card on the page —
   // expanding one expands all of them (Summary's two charts move
   // together), collapsing one collapses all. Starts collapsed, like the
   // cards' own default.
   const [chartsOpen, setChartsOpen] = useState(false);
-  // The range opens on This month (the page's default); the picker's
-  // state contract (selection + confirmed window) is persisted per page.
-  const { selected, range, applyCustom } =
-    useDateRange("This month");
+  const [month, setMonth] = useState("all");
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  // Years the active tab's rows have seen + the current year (the list
+  // widens as data arrives; the "all years" option is in the component).
+  const years = useMemo(() => {
+    const ys = new Set<string>([String(new Date().getFullYear())]);
+    for (const r of summary) ys.add(r.month.slice(0, 4));
+    for (const r of releases) if (r.releasedDate) ys.add(r.releasedDate.slice(0, 4));
+    return [...ys].sort().reverse();
+  }, [summary, releases]);
 
   useEffect(() => {
     let live = true;
     setLoading(true);
-    // The picker gives full-day bounds — DATE data wants local ISO days,
-    // exactly what the backend's from/to (inclusive) slice.
-    const from = fmtISO(range.start), to = fmtISO(range.end);
+    // The month/year pair gives full-day bounds — DATE data wants local
+    // ISO days, exactly what the backend's from/to (inclusive) slice.
+    const { from, to } = windowFrom(month, year);
     const p =
       tab === "Summary"
         ? fetchReportSummary(from, to).then(setSummary)
@@ -80,7 +87,7 @@ export default function Reports() {
     p.catch((e: unknown) => toast((e as Error).message))
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [tab, range]);
+  }, [tab, month, year]);
 
   // Chart derivations — the same rows the tables get below, reshaped for
   // each picture. The filter above scopes both, so chart and table
@@ -138,7 +145,7 @@ export default function Reports() {
         </div>
         <span className="text-sm text-muted">{tabHint[tab]}</span>
         <div className="flex-1" />
-        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
+        <MonthYearFilter month={month} year={year} years={years} onMonth={setMonth} onYear={setYear} />
       </div>
 
       {/* Charts + the report — one scroll column; the filter above scopes
@@ -185,7 +192,7 @@ export default function Reports() {
 
         {loading ? (
           <div className="max-h-[60vh] shrink-0 overflow-hidden rounded-xl border border-line bg-card shadow-sm">
-            <div className="table w-full text-sm">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line">
                   {Array.from({ length: 7 }).map((_, i) => (
@@ -198,7 +205,7 @@ export default function Reports() {
               <tbody>
                 <SkeletonRows rows={8} cols={7} />
               </tbody>
-            </div>
+            </table>
           </div>
         ) : tab === "Summary" ? (
           <div className="max-h-[60vh] shrink-0 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">

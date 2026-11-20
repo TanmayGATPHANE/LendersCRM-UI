@@ -5,6 +5,7 @@ import { Field } from "../Field.tsx";
 import FlashTr, { type FlashHint } from "./FlashTr.tsx";
 import { SkeletonCards, SkeletonRows } from "../Skeleton.tsx";
 import { money, shortDate } from "../../utils/format.ts";
+import { interestFor } from "../../utils/interest.ts";
 /**
  * GridTable — the flat, spreadsheet-style view (Compass / Excel kind).
  * Rows are grouped BY CUSTOMER (alphabetical); inside each customer,
@@ -67,6 +68,8 @@ interface GridRow {
   lend?: string;
   received: string; // the Received column's display text ("—" on lends)
   rate: number | null;
+  /** Live accrued (Active) or frozen (Released) interest per lend. */
+  interest: string; // pre-formatted display text
   status: EntryStatus | null; // payments carry null
   released: string | null; // ISO released date, payments carry null
   notes: string;
@@ -87,15 +90,19 @@ interface Props {
   flash?: FlashHint | null;
   /** The books are loading — grey rows stand in until they arrive. */
   loading?: boolean;
+  /** Which status tab the grid is on: shapes the Interest header. */
+  statusTab?: "All" | "Active" | "Released";
 }
 
-export default function GridTable({ groups, customers, readOnly = false, loading = false, onUpdate, onPaymentUpdate, onCustomerMove, flash }: Props) {
+export default function GridTable({ groups, customers, readOnly = false, loading = false, statusTab = "All", onUpdate, onPaymentUpdate, onCustomerMove, flash }: Props) {
   // Per-column filter text (Excel-style): each column filters its own
   // rows with a contains-match, all filters combine with AND.
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
 
   // The filterable columns, in order — drives the filter row + matching.
-  const COLS = ["date", "type", "customer", "item", "lend", "received", "rate", "status", "released", "notes"];
+  // The Interest column: outstanding (accrued) on Active, the frozen
+  // earned figure on Released — the header names its tab's meaning.
+  const COLS = ["date", "type", "customer", "item", "lend", "received", "rate", "interest", "status", "released", "notes"];
   // A lend/payment commits through the right API given its row kind.
   const save =
     (r: GridRow) =>
@@ -120,6 +127,8 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         amountText: money(s.amount),
         received: "—", // lend rows have nothing in the Received column
         rate: s.rate ?? null,
+        // Active: interest outstanding, accrued live (§4.4); released: frozen.
+        interest: s.status === "Active" ? money(interestFor(s)) : money(s.interestCollected ?? 0),
         status: s.status,
         released: s.releasedDate ?? null,
         notes: s.notes || "",
@@ -140,6 +149,7 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         lend: "—", // payments never sit in the Lend column
         received: money(p.amount), // what came back, in its own column
         rate: null,
+        interest: "—",
         status: null,
         released: null,
         notes: p.notes || "",
@@ -171,6 +181,7 @@ export default function GridTable({ groups, customers, readOnly = false, loading
       case "lend": return r.kind === "lend" ? String(r.amount) : "";
       case "received": return r.kind === "payment" ? String(r.amount) : "";
       case "rate": return r.rate != null ? String(r.rate) : "";
+      case "interest": return r.interest === "—" ? "" : r.interest.replace("₹", "");
       case "status": return r.status ?? "";
       case "released": return r.released ?? "";
       case "notes": return r.notes;
@@ -216,16 +227,18 @@ export default function GridTable({ groups, customers, readOnly = false, loading
         <tr>
           <th className={`${th} w-[8%]`}>Date</th>
           <th className={`${th} w-[6%]`}>Type</th>
-          <th className={`${th} w-[13%]`}>Customer</th>
-          <th className={`${th} w-[13%]`}>Item</th>
+          <th className={`${th} w-[12%]`}>Customer</th>
+          <th className={`${th} w-[12%]`}>Item</th>
           {/* Lend = what went out; Received = what came back (payments) */}
-          <th className={`${thR} w-[10%]`}>Lend</th>
-          <th className={`${thR} w-[10%]`}>Received</th>
-          <th className={`${thR} w-[6%]`}>Rate</th>
-          <th className={`${th} w-[8%]`}>Status</th>
+          <th className={`${thR} w-[9%]`}>Lend</th>
+          <th className={`${thR} w-[9%]`}>Received</th>
+          <th className={`${thR} w-[5%]`}>Rate</th>
+          {/* Interest: outstanding on Active / earned on Released. */}
+          <th className={`${thR} w-[9%]`}>{statusTab === "Released" ? "Interest Earned" : "Interest"}</th>
+          <th className={`${th} w-[7%]`}>Status</th>
           {/* Release date: when the collateral went back (grids only) */}
-          <th className={`${th} w-[9%]`}>Released</th>
-          <th className={`${th} w-[17%]`}>Notes</th>
+          <th className={`${th} w-[8%]`}>Released</th>
+          <th className={`${th} w-[15%]`}>Notes</th>
         </tr>
         {/* Per-column filter row — Excel-style, under the header labels */}
         <tr>
@@ -307,6 +320,9 @@ export default function GridTable({ groups, customers, readOnly = false, loading
                 className={cellR}
                 onCommit={(v) => patch({ rate: v === "" ? null : v })}
               />
+              {/* Interest: accrued live (§4.4) on Active; the frozen
+                  earned figure on Released — read-only in either case. */}
+              <td className={cellR}>{r.interest === "₹0" ? "—" : r.interest}</td>
               <td className={cell}>{r.status ? <StatusBadge status={r.status} /> : "—"}</td>
               <td className={`${cell} text-muted whitespace-nowrap`}>{shortDate(r.released)}</td>
               <EditCell

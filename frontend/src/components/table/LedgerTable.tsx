@@ -22,9 +22,12 @@ interface Props {
   /** Edit the lend behind a ledger row (the ⋮-less pencil); absent → no
       edit column, exactly the read-only History view. */
   onEditEntry?: (entry: Entry) => void;
+  /** Delete one active lend (§4.9) — archived to EntriesDeleted; absent
+      → no delete affordance (read-only history views). */
+  onDeleteEntry?: (entry: Entry) => void;
 }
 
-export default function LedgerTable({ group, onEditEntry }: Props) {
+export default function LedgerTable({ group, onEditEntry, onDeleteEntry }: Props) {
   // text-left matters: <th> defaults to centered, <td> to left — without
   // it the headers float mid-column instead of sitting over the data.
   // table-fixed + per-column widths keep the columns proportionate.
@@ -42,7 +45,7 @@ export default function LedgerTable({ group, onEditEntry }: Props) {
           <th className={`${c} w-[16%]`}>Calculated interest</th>
           <th className={`${c} w-[18%]`}>Interest till</th>
           <th className={c}>Notes</th>
-          {onEditEntry && <th className={`${c} w-[4%]`}></th>}
+          {(onEditEntry || onDeleteEntry) && <th className={`${c} w-[6%]`}></th>}
         </tr>
       </thead>
       <tbody className="divide-y divide-line">
@@ -74,6 +77,22 @@ export default function LedgerTable({ group, onEditEntry }: Props) {
                                 focus-visible:ring-primary/40 transition-colors duration-300 ease-brand`}
                   >
                     <i className="ph ph-pencil-simple text-base" aria-hidden="true" />
+                  </button>
+                )}
+                {/* §4.9 — the wrong lend can be deleted outright; it moves
+                    to EntriesDeleted with its cash row removed. */}
+                {onDeleteEntry && r.kind === "lend" && r.status === "Active" && (
+                  <button
+                    onClick={() => {
+                      const entry = group.subs.find((s) => s.id === r.id);
+                      if (entry) onDeleteEntry(entry);
+                    }}
+                    title="Delete this lend (archived)"
+                    className={`rounded p-1 text-muted hover:bg-tint-hover hover:text-red-600
+                                focus-visible:outline-none focus-visible:ring-2
+                                focus-visible:ring-primary/40 transition-colors duration-300 ease-brand`}
+                  >
+                    <i className="ph ph-trash text-base" aria-hidden="true" />
                   </button>
                 )}
               </td>

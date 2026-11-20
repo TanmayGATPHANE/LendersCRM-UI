@@ -13,6 +13,11 @@ export default function ReleasedTable({ rows }: { rows: ReleaseReportRow[] }) {
   if (rows.length === 0) return <Empty text="Nothing released yet." />;
   const t = (k: "lent" | "recoveredPrincipal" | "interestCollected") =>
     rows.reduce((s, r) => s + r[k], 0);
+  // Collected (cash): only rows that recorded the actual counter figure.
+  const collected = rows
+    .filter((r) => r.totalCollected != null)
+    .reduce((s, r) => s + (r.totalCollected ?? 0), 0);
+  const collectedCount = rows.filter((r) => r.totalCollected != null).length;
   return (
     <>
       {/* Mobile: one card per released collateral */}
@@ -43,7 +48,7 @@ export default function ReleasedTable({ rows }: { rows: ReleaseReportRow[] }) {
           <span className="font-medium uppercase tracking-wider text-muted">Total</span>{" "}
           <span className="tabular-nums text-ink">
             Lent {money(t("lent"))} · Recovered {money(t("recoveredPrincipal"))} · Interest{" "}
-            {money(t("interestCollected"))}
+            {money(t("interestCollected"))} · Collected {money(collected)}
           </span>
         </div>
       </div>
@@ -90,7 +95,16 @@ export default function ReleasedTable({ rows }: { rows: ReleaseReportRow[] }) {
           <td className={tdR}></td>
           <td className={`${tdR} py-1.5 font-medium text-ink`}>{money(t("recoveredPrincipal"))}</td>
           <td className={`${tdR} py-1.5 font-medium text-green-700`}>{money(t("interestCollected"))}</td>
-          <td className={tdR}></td>
+          {/* Collected (cash): the sum of the rows that recorded the
+              counter's actual figure, and a note when some did not. */}
+          <td className={`${tdR} py-1.5 font-medium text-ink`}>
+            {money(collected)}
+            {collectedCount < rows.length && (
+              <span className="block text-[11px] font-normal text-muted">
+                {rows.length - collectedCount} row{rows.length - collectedCount === 1 ? "" : "s"} without a figure
+              </span>
+            )}
+          </td>
         </tr>
       </tfoot>
     </table>

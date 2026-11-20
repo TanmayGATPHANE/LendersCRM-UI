@@ -8,9 +8,8 @@ import ConfirmDialog from "../components/ConfirmDialog.tsx";
 import { SkeletonCards, SkeletonRows } from "../components/Skeleton.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { inputCls, primaryBtnCls } from "../components/ui.ts";
-import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
-import useDateRange from "../utils/useDateRange.ts";
-import { money, shortDate } from "../utils/format.ts";
+import MonthYearFilter from "../components/MonthYearFilter.tsx";
+import { fmtISO, money, shortDate, windowFrom } from "../utils/format.ts";
 import { toast } from "../components/Toast.tsx";
 
 /**
@@ -51,10 +50,10 @@ export default function Cash() {
   const [ledger, setLedger] = useState<CashLedgerItem[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
-  // The range opens on This month — the picker widens it (All time = the
-  // whole book); the state contract is persisted per page.
-  const { selected, range, applyCustom } =
-    useDateRange("This month");
+  // Month/year like the Dashboard's — defaults current year, all months,
+  // never persisted; both "all" opens the whole book.
+  const [month, setMonth] = useState("all");
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
   // SUM(Amount) over the whole CashLedger table — the dashboard's number,
   // from its own endpoint so the window above never fakes it smaller.
   const [inHand, setInHand] = useState<number | null>(null);
@@ -66,9 +65,9 @@ export default function Cash() {
   const [deleting, setDeleting] = useState<CashLedgerItem | null>(null);
 
   async function refresh() {
-    // Only the range's slice comes over the wire; "in hand" is the
+    // Only the window's slice comes over the wire; "in hand" is the
     // whole-book SUM from its own endpoint.
-    const from = fmtISO(range.start), to = fmtISO(range.end);
+    const { from, to } = windowFrom(month, year);
     const [rows, es, cashInHand] = await Promise.all([
       fetchCashLedger(from, to), fetchEntries(), fetchCashTotal(),
     ]);
@@ -82,7 +81,7 @@ export default function Cash() {
   // stays client-side over what is already loaded.
   useEffect(() => {
     refresh();
-  }, [range]);
+  }, [month, year]);
 
   /** Delete one manual movement (a corrected mistake) — confirmed in the
       app's own dialog, never the browser's raw popup. */
@@ -123,25 +122,31 @@ export default function Cash() {
       ); // newest day first; within one day the id keeps book order
   }, [ledger, entries]);
 
-  // Search over the source text, who paid and the notes; the date range
-  // scopes the window (the API already returned just that slice — the
-  // client-side bounds simply keep the search honest after new saves).
+  // Search over the source text, who paid and the notes; the month/year
+  // window scopes the view (the API already returned just that slice —
+  // the client-side bounds simply keep the search honest after saves).
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const from = fmtISO(range.start), to = fmtISO(range.end);
+    const { from, to } = windowFrom(month, year);
     return rows.filter(
       (r) =>
         (!q || `${r.label} ${r.who} ${r.notes}`.toLowerCase().includes(q)) &&
-        r.date >= from && r.date <= to
+        (!from || r.date >= from) && (!to || r.date <= to)
     );
-  }, [rows, search, range]);
+  }, [rows, search, month, year]);
 
   // The filters apply to the view only — the real Total Cash Available
   // is SUM(Amount) over the whole table (the backend's insights tile),
   // shown as "in hand"; the filtered sum is labelled per-window.
   const total = shown.reduce((s, r) => s + r.amount, 0);
   const grandTotal = inHand ?? 0;
-  const windowed = selected !== "All time";
+  const windowed = !(month === "all" && year === "all");
+  // Years the month filter's dropdown offers: the ledger + the current year.
+  const years = useMemo(() => {
+    const ys = new Set<string>([String(new Date().getFullYear())]);
+    for (const r of rows) if (r.date) ys.add(r.date.slice(0, 4));
+    return [...ys].sort().reverse();
+  }, [rows]);
 
   // Paged rendering: 50 rows, growing by chunks (scroll or button),
   // so 2,000 ledger rows never render at once.
@@ -153,7 +158,7 @@ export default function Cash() {
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Toolbar: search + date-range picker on the left, running total on the right */}
+      {/* Toolbar: search + month/year filters on the left, running total on the right */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
         <div className="min-w-44 max-w-xs flex-1">
           <input
@@ -163,7 +168,7 @@ export default function Cash() {
             className={inputCls}
           />
         </div>
-        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
+        <MonthYearFilter month={month} year={year} years={years} onMonth={setMonth} onYear={setYear} />
         <div className="flex-1" />
         <span className="text-sm text-muted">
           {shown.length} {shown.length === 1 ? "entry" : "entries"} ·{" "}

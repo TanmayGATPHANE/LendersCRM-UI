@@ -65,6 +65,11 @@ export default function InsightsBar({ insights, tab = "All", loading = false }: 
 
 function InsightsTiles({ insights, tab }: { insights: Insights; tab: string }) {
   // [label, value, hover-hint] per tile, keyed by the tab they belong to.
+  // The Amanat label names its tab: the figures follow the tab's rows.
+  const amanatLabel =
+    tab === "Active" ? "Total Amanat (Active)"
+    : tab === "Released" ? "Total Amanat (Released)"
+    : "Total Amanat (Active + Released)";
   const amanatHint =
     tab === "Active" ? "Sum of the lend amounts on active collaterals"
     : tab === "Released" ? "Sum of the lend amounts on released collaterals"
@@ -72,14 +77,14 @@ function InsightsTiles({ insights, tab }: { insights: Insights; tab: string }) {
   const interestTile: [string, string] =
     tab === "Active" ? ["Interest Outstanding", "Accrued live on the active lends so far — freezes when they release"]
     : tab === "Released" ? ["Interest Collected", "Interest frozen on the released collaterals"]
-    : ["Interest Earned (FY)", "Interest collected from releases this financial year (Apr–Mar)"];
+    : ["Interest Earned + Outstanding", "Interest collected across every release, plus the accrued interest still to come with future releases"];
   const items: [string, number, string][] = [
-    ["Total Amanat", insights.totalAmanat, amanatHint],
+    [amanatLabel, insights.totalAmanat, amanatHint],
     [interestTile[0], insights.interestEarned, interestTile[1]],
     [
       "Total Cash Available",
       insights.cashAvailable,
-      "SUM over the cash table only — lends (−), partial returns, the two release legs and manual ±; nothing else (same figure on every tab)",
+      "SUM over the cash rows dated in the month/year window (whole cash table when all years show) — lends (−), partial returns, the two release legs and manual ±",
     ],
   ];
 

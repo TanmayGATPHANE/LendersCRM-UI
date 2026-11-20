@@ -146,29 +146,39 @@ export interface ReleaseReportRow {
 // ---- Excel import (§4.7) — shapes mirror the backend Contracts.cs ----
 
 /** One money row of a parsed sheet: a lend (amount > 0) or an inline
-    partial return (written negative in the sheet, positive here). */
+    partial return (written negative in the sheet, positive here). Rows
+    from a RELEASED sheet also carry the release day + earned interest. */
 export interface ImportPreviewRow {
   date: string; // ISO yyyy-mm-dd
   amount: number;
   row: number; // the sheet row it came from (provenance)
   notes: string | null; // the note the sheet owner wrote on a return
+  releasedDate: string | null;
+  interest: number | null;
 }
 
 /** One collateral parsed from a sheet — merged Name+Item cells fold that
-    block's rows into one group (sub-lends); unmerged rows stand alone. */
+    block's rows into one group (sub-lends); unmerged rows stand alone.
+    Groups from a RELEASED sheet carry the release day + collected interest. */
 export interface ImportPreviewGroup {
   name: string;
   item: string;
   row: number;
   lends: ImportPreviewRow[];
   returns: ImportPreviewRow[];
+  releasedDate: string | null;
+  interestCollected: number | null;
+  totalCollected: number | null;
 }
 
-/** The whole parsed workbook, as the import dialog's review table reads it. */
+/** The whole parsed workbook, as the import dialog's review table reads it.
+    kind = which sheet the rows came from: "Active" (the open book) or
+    "Released" (the already-returned book). */
 export interface ImportPreview {
   fileName: string;
   sheets: string[];
   sheetUsed: string;
+  kind: string;
   groups: ImportPreviewGroup[];
   warnings: string[];
 }

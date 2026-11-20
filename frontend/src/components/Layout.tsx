@@ -4,7 +4,6 @@ import { currentUser, setUser } from "../api/client.ts";
 import { ghostIconBtnCls } from "./ui.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 import UserMenu from "./UserMenu.tsx";
-import Bell from "./Bell.tsx";
 import Toaster from "./Toast.tsx";
 
 /** The browser tab names the page being shown. */
@@ -164,7 +163,6 @@ export default function Layout() {
               clear middle, then the red-dot bell and the account chip. */}
           <GlobalSearch />
           <div className="hidden flex-1 sm:block" />
-          <Bell />
           <UserMenu
             name={user?.name ?? ""}
             email={user?.email ?? ""}

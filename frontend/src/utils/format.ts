@@ -29,6 +29,24 @@ export function istWhen(iso: string | null | undefined): string {
   });
 }
 
+/** Local ISO date (yyyy-mm-dd) — the shape every from/to API takes. */
+export function fmtISO(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The inclusive from/to window a month/year filter pair stands for:
+    "all" + "all" → the whole book ({}); a month → its first..last day;
+    a month "all" with a year → Jan 1 .. Dec 31 of that year. */
+export function windowFrom(month: string, year: string): { from?: string; to?: string } {
+  if (month === "all" && year === "all") return {};
+  const y = Number(year);
+  if (month === "all") return { from: `${y}-01-01`, to: `${y}-12-31` };
+  const m = Number(month); // 1..12
+  const last = new Date(y, m, 0).getDate();
+  return { from: `${y}-${String(m).padStart(2, "0")}-01`, to: `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}` };
+}
+
 /** Today's date as an ISO string (yyyy-mm-dd) for date inputs. */
 export function today(): string {
   return new Date().toISOString().slice(0, 10);

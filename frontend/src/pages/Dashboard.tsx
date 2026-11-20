@@ -5,19 +5,21 @@ import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
 import ImportDialog from "../components/dialogs/ImportDialog.tsx";
 import OutsourceDialog from "../components/dialogs/OutsourceDialog.tsx";
+import ConfirmDialog from "../components/ConfirmDialog.tsx";
+import { money, shortDate } from "../utils/format.ts";
 import EntryGroupTable, { type SortCol, type SortSpec } from "../components/table/EntryGroupTable.tsx";
 import GridTable from "../components/table/GridTable.tsx";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
 import { primaryBtnCls, secondaryBtnCls, inputCls, selectCls } from "../components/ui.ts";
-import { fetchCustomers, fetchEntries, fetchPartials, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, canEdit } from "../api/client.ts";
+import { fetchCustomers, fetchEntries, fetchPartials, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, deleteEntry, deleteGroup, canEdit } from "../api/client.ts";
 import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, Payment, SavedWhere } from "../api/types.ts";
 import { buildGroups } from "../utils/grouping.ts";
 import { toast } from "../components/Toast.tsx";
 import { matchesGroup } from "../utils/search.ts";
-import { loadSharedWindow, saveSharedWindow } from "../utils/sharedRange.ts";
-import type { DateRange } from "../components/DateRangePicker.tsx";
+import MonthYearFilter from "../components/MonthYearFilter.tsx";
+import { windowFrom } from "../utils/format.ts";
 
 /** The three status filters shown as a segmented control. */
 const FILTERS: Array<"All" | EntryStatus> = ["All", "Active", "Released"];
@@ -27,38 +29,6 @@ type EntryFilter = (typeof FILTERS)[number];
 
 /** The two view shapes: grouped ledger rows, or a flat spreadsheet grid. */
 const VIEWS: Array<"Groups" | "Grid"> = ["Groups", "Grid"];
-
-/** Month filter options — value is the 2-digit month of the ISO date. */
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** The app's ONE shared date window (utils/sharedRange.ts) rendered as
-    the dashboard's month/year pair: a single-month window → that month;
-    a single calendar year → that year, month "all"; anything wider or
-    unsaved → month and year "all" (or, with nothing saved, the counter's
-    work set: the current month). Reads the same preference Reports/Cash/
-    Activity hydrate, so landing never resets what the user picked. */
-function deriveDashboardWindow(shared: DateRange | null): { month: string; year: string } {
-  if (!shared) {
-    const now = new Date();
-    return { month: String(now.getMonth() + 1).padStart(2, "0"), year: String(now.getFullYear()) };
-  }
-  const sy = shared.start.getFullYear(), ey = shared.end.getFullYear();
-  const sm = shared.start.getMonth(), em = shared.end.getMonth();
-  if (sy !== ey) return { month: "all", year: "all" };
-  if (sm === em) return { month: String(sm + 1).padStart(2, "0"), year: String(sy) };
-  return { month: "all", year: String(sy) };
-}
-
-/** The user's month/year pick → the shared window (written back so every
-    page agrees): a month spans its first..last day, a year spans Jan 1
-    .. Dec 31, both "all" is the All-time window. */
-function sharedWindowFor(m: string, y: string): DateRange {
-  const all = new Date(2000, 0, 1), today = new Date();
-  if (m === "all" && y === "all") return { start: all, end: today };
-  if (m === "all") return { start: new Date(Number(y), 0, 1), end: new Date(Number(y), 11, 31) };
-  const mm = Number(m) - 1;
-  return { start: new Date(Number(y), mm, 1), end: new Date(Number(y), mm, new Date(Number(y), mm + 1, 0).getDate()) };
-}
 
 /**
  * Dashboard — day-to-day lending screen: search + status filter + Add
@@ -77,12 +47,10 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<EntryFilter>("Active"); // daily work = active lends
   const [view, setView] = useState<"Groups" | "Grid">("Groups"); // Groups = ledger rows; Grid = spreadsheet
-  // Month + year of the first lend — derived once from the shared date
-  // window on first render (never resets on landing; utils/sharedRange).
-  // The dropdowns' handlers write the pick back to the shared window.
-  const [initialWindow] = useState(() => deriveDashboardWindow(loadSharedWindow()));
-  const [month, setMonth] = useState(initialWindow.month);
-  const [year, setYear] = useState(initialWindow.year);
+  // Month + year of the first lend — defaults, never persisted: the
+  // counter's work set opens on the current year, all months visible.
+  const [month, setMonth] = useState("all");
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
 
   // Which dialogs are open: group being released, entry being edited,
   // group receiving a sub-lend or a partial return, or a plain Add Entry.
@@ -91,6 +59,9 @@ export default function Dashboard() {
   const [subGroup, setSubGroup] = useState<CollateralGroup | null>(null);
   const [partlyReturning, setPartlyReturning] = useState<CollateralGroup | null>(null);
   const [outsourcing, setOutsourcing] = useState<CollateralGroup | null>(null); // §4.8
+  // §4.9 deletions: the whole collateral, or one lend from its ledger.
+  const [deletingGroup, setDeletingGroup] = useState<CollateralGroup | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false); // Excel lending-book import (§4.7)
 
@@ -153,10 +124,12 @@ export default function Dashboard() {
   /** Refetch entries + payments + insights + the customer list from the
       API (used by dialogs and the Refresh button below — insights update
       on every change, and new customers must appear in the Add Entry
-      suggestions right away, not after a reload). */
+      suggestions right away, not after a reload). The tiles read the
+      SAME month/year window the table shows. */
   async function refresh(): Promise<void> {
+    const w = windowFrom(month, year);
     const [e, p, i, c] = await Promise.all([
-      fetchEntries(), fetchPartials(), fetchInsights(filterRef.current), fetchCustomers(),
+      fetchEntries(), fetchPartials(), fetchInsights(filterRef.current, w.from, w.to), fetchCustomers(),
     ]);
     setEntries(e);
     setPartials(p);
@@ -165,19 +138,20 @@ export default function Dashboard() {
     setLoading(false);
   }
 
-  /** Switching tabs refetches the tiles for that tab — the numbers are
-      the API's, never computed here. The first render skips this: the
-      mount's refresh() above already fetched the current tab's tiles,
-      so firing again would double the same request. */
+  /** Switching tabs or moving the month/year window refetches the tiles
+      for that view — the numbers are the API's, never computed here. The
+      first render skips this: the mount's refresh() above already fetched
+      the current tab + window, so firing again would double the request. */
   const tabsFetched = useRef(false);
   useEffect(() => {
     if (!tabsFetched.current) { tabsFetched.current = true; return; }
     let live = true;
-    fetchInsights(filter)
+    const w = windowFrom(month, year);
+    fetchInsights(filter, w.from, w.to)
       .then((i) => { if (live) setInsights(i); })
       .catch(() => { /* the initial refresh surfaces real errors */ });
     return () => { live = false; };
-  }, [filter]);
+  }, [filter, month, year]);
 
   /** The toolbar's Refresh button: reload the table in front of you. */
   async function refreshNow(): Promise<void> {
@@ -233,8 +207,6 @@ export default function Dashboard() {
 
   // The years any record falls in — feeds the year dropdown; the current
   // year always sits in the list (the default filter), even on a fresh book.
-  // The shared window's own year rides the list too, so a restored filter
-  // always has its option, entry-less or not.
   const years = useMemo(() => {
     const ys = new Set<string>([String(new Date().getFullYear())]);
     if (year !== "all") ys.add(year);
@@ -242,15 +214,6 @@ export default function Dashboard() {
     for (const p of partials) if (p.date) ys.add(p.date.slice(0, 4));
     return [...ys].sort().reverse();
   }, [entries, partials, year]);
-
-  /** One dropdown change → the shared window (Dashboard, Reports, Cash
-      and Activity all read it): picking a month while the year is "all"
-      anchors that month to the current year. */
-  function setWindow(m: string, y: string): void {
-    setMonth(m);
-    setYear(y);
-    saveSharedWindow(sharedWindowFor(m, y));
-  }
 
   // Collateral groups + global search (customer / item / date / amount)
   // + status filter + month/year of the collateral's first lend. Both
@@ -297,6 +260,21 @@ export default function Dashboard() {
                 if (ar !== br) return flip * (ar - br);
                 return flip * a.customerName.localeCompare(b.customerName);
               }
+              // The Released tab's Interest Earned column — the frozen figures.
+              case "earned": {
+                const ae = a.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
+                const be = b.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
+                if (ae !== be) return flip * (ae - be);
+                return flip * a.customerName.localeCompare(b.customerName);
+              }
+              // The Interest column (Active/All) — the per-lend figure the
+              // row shows: live accrual on active, frozen on released rows.
+              case "interest": {
+                const ai = a.subs.reduce((s, x) => s + (x.interest ?? 0), 0);
+                const bi = b.subs.reduce((s, x) => s + (x.interest ?? 0), 0);
+                if (ai !== bi) return flip * (ai - bi);
+                return flip * a.customerName.localeCompare(b.customerName);
+              }
               case "status": {
                 const rank = (x: string) => (x === "Active" ? 0 : 1);
                 if (rank(a.status) !== rank(b.status)) return flip * (rank(a.status) - rank(b.status));
@@ -331,7 +309,31 @@ export default function Dashboard() {
       { label: "Partial Return", onClick: () => setPartlyReturning(g), hidden: g.status !== "Active" },
       { label: "Release", onClick: () => setReleasing(g), hidden: g.status !== "Active" },
       { label: "Outsource", onClick: () => setOutsourcing(g), hidden: g.status !== "Active" },
+      // §4.9 — the wrong collateral archives + vanishes; the dialog warns.
+      { label: "Delete", onClick: () => setDeletingGroup(g), hidden: g.status !== "Active" },
     ];
+  }
+
+  async function removeEntryNow(entry: Entry | null): Promise<void> {
+    if (!entry) return;
+    try {
+      await deleteEntry(entry.id);
+      toast("Entry deleted and archived", "ok");
+      refresh();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
+  async function removeGroupNow(group: CollateralGroup | null): Promise<void> {
+    if (!group) return;
+    try {
+      await deleteGroup(group.groupId);
+      toast("Collateral deleted and archived", "ok");
+      refresh();
+    } catch (err) {
+      toast((err as Error).message);
+    }
   }
 
   return (
@@ -376,7 +378,9 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div className="min-w-44 max-w-xs flex-1">
+        {/* The search stretches all the way to the month/year filters and
+            shrinks with the window (min keeps it typable on small rows). */}
+        <div className="min-w-40 flex-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -385,29 +389,22 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="flex-1" />
-
-        {/* Month + year of the first lend, near the Refresh button */}
-        <select
-          value={month}
-          onChange={(e) => setWindow(e.target.value, e.target.value !== "all" && year === "all" ? String(new Date().getFullYear()) : year)}
-          title="Filter by month of the lend"
-          className={selectCls}
+        {/* Month + year of the first lend, with the filtered count beside */}
+        <MonthYearFilter
+          month={month}
+          year={year}
+          years={years}
+          onMonth={setMonth}
+          onYear={setYear}
+        />
+        {/* How many collaterals the month/year window (plus the tab and
+            search filters) holds — the books at a glance. */}
+        <span
+          className="rounded-full bg-tint px-3 py-1.5 text-sm font-medium text-ink"
+          title="Collaterals matching these filters"
         >
-          <option value="all">All months</option>
-          {MONTHS.map((m, i) => (
-            <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
-          ))}
-        </select>
-        <select
-          value={year}
-          onChange={(e) => setWindow(month, e.target.value)}
-          title="Filter by year of the lend"
-          className={selectCls}
-        >
-          <option value="all">All years</option>
-          {years.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
+          {shown.length} {shown.length === 1 ? "entry" : "entries"}
+        </span>
 
         {/* Reload the table without touching the filter or search */}
         <button
@@ -448,9 +445,11 @@ export default function Dashboard() {
             actions={canEdit() ? actionsFor : undefined}
             loading={loading}
             showReleased={filter !== "Active"}
+            statusTab={filter}
             sort={sort}
             onSort={onSort}
             onEditEntry={setEditing} // edit one lend (row ⋮ Edit, or a sub-lend here)
+            onDeleteEntry={setDeletingEntry} // §4.9 — delete one lend from its ledger row
             flash={flash}
           />
           <LoadMore visible={visibleGroups} total={shown.length} onMore={moreGroups} />
@@ -464,6 +463,7 @@ export default function Dashboard() {
             customers={customers}
             loading={loading}
             readOnly={!canEdit()}
+            statusTab={filter}
             flash={flash}
             onUpdate={(id, patch) => patchRow("lend", id, patch)}
             onPaymentUpdate={(id, patch) => patchRow("payment", id, patch)}
@@ -505,6 +505,32 @@ export default function Dashboard() {
         group={outsourcing}
         onClose={() => setOutsourcing(null)}
         onSaved={onSaved}
+      />
+
+      {/* §4.9 — the delete confirmations (archive + remove, Writer-only) */}
+      <ConfirmDialog
+        open={Boolean(deletingGroup)}
+        title="Delete Collateral"
+        message={
+          deletingGroup
+            ? `Delete ${deletingGroup.customerName}'s collateral (${deletingGroup.item}, ${money(deletingGroup.totalAmount)} lent)? Every lend of it — ${deletingGroup.subs.length} in the books — and its cash entries are removed, and the records move to the deleted archive (EntriesDeleted).`
+            : ""
+        }
+        confirmLabel="Delete Collateral"
+        onClose={() => setDeletingGroup(null)}
+        onConfirm={() => removeGroupNow(deletingGroup)}
+      />
+      <ConfirmDialog
+        open={Boolean(deletingEntry)}
+        title="Delete Lend"
+        message={
+          deletingEntry
+            ? `Delete this lend of ${money(deletingEntry.amount)}, ${shortDate(deletingEntry.date)} — ${deletingEntry.item}? It is removed from the books (its cash entry goes with it) and archived to EntriesDeleted.`
+            : ""
+        }
+        confirmLabel="Delete Lend"
+        onClose={() => setDeletingEntry(null)}
+        onConfirm={() => removeEntryNow(deletingEntry)}
       />
     </main>
   );

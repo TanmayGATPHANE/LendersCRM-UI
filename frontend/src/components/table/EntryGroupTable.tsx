@@ -36,8 +36,13 @@ interface Props {
   loading?: boolean;
   /** Show the Released column? (Active tab: no — nothing is released.) */
   showReleased?: boolean;
+  /** Which status tab the table is on: Released → the Rate column swaps
+      to Interest Earned (the frozen figures); Active/All → Rate. */
+  statusTab?: "All" | "Active" | "Released";
   /** Edit one individual lend (a sub-lend too) from its ledger row. */
   onEditEntry?: (entry: Entry) => void;
+  /** Delete one active lend (§4.9) — the page owns the confirmation. */
+  onDeleteEntry?: (entry: Entry) => void;
   /** The last successful save (Dashboard only) — pulses that group's row. */
   flash?: FlashHint | null;
   /** The active sort (the header shows its arrow); ascending by date. */
@@ -47,8 +52,13 @@ interface Props {
 }
 
 /** The columns whose headers sort the table (click = toggle asc/desc). */
-export type SortCol = "date" | "amount" | "customer" | "rate" | "status";
+export type SortCol = "date" | "amount" | "customer" | "rate" | "interest" | "earned" | "status";
 export type SortSpec = { col: SortCol; dir: "asc" | "desc" };
+
+/** The interest a RELEASED group earned — the frozen figures of its lends. */
+function earnedOf(g: CollateralGroup): number {
+  return g.subs.reduce((s, x) => s + (x.interestCollected ?? 0), 0);
+}
 
 /** Excel-style column widths, remembered per browser: drag a header's
     right edge to resize, double-click the edge to reset. The key keeps
@@ -65,7 +75,7 @@ function loadColWidths(): Record<string, number> {
 const COL_MIN = 56;   // no column ever collapses away
 const COL_MAX = 720;  // one column can't swallow the whole table
 
-export default function EntryGroupTable({ groups, actions, loading = false, showReleased = true, onEditEntry, flash, sort, onSort }: Props) {
+export default function EntryGroupTable({ groups, actions, loading = false, showReleased = true, statusTab = "All", onEditEntry, onDeleteEntry, flash, sort, onSort }: Props) {
   const [expand, setExpand] = useState<number[]>([]); // groupIds currently expanded
   const [colWidths, setColWidths] = useState<Record<string, number>>(loadColWidths);
 
@@ -117,10 +127,11 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
     );
   }
 
-  // The column budget: Date · Amount · Customer · Item · Rate · Status
+  // The column budget: Date · Amount · Customer · Item · Rate · Interest
+  // (Active/All tabs) OR Rate→Interest Earned (Released) · Status
   // (+ Released when shown) (+ Actions), and the expanded ledger row
   // spans exactly what the headline row shows.
-  const colSpan = 6 + (showReleased ? 1 : 0) + (actions ? 1 : 0);
+  const colSpan = 6 + (statusTab === "Released" ? 0 : 1) + (showReleased ? 1 : 0) + (actions ? 1 : 0);
 
   // text-left matters: <th> defaults to centered. Layout is content-
   // sized; every header carries a drag handle (except the ⋮-only one).
@@ -152,7 +163,7 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
         style={wide ? { width: `${wide}px` } : undefined}
         className={`${th} ${onSort ? "cursor-pointer select-none hover:text-ink transition-colors duration-300 ease-brand" : ""}`}
       >
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
           {label}
           <i
             className={`ph ${active ? (sort?.dir === "asc" ? "ph-caret-up" : "ph-caret-down") : "ph-caret-up-down"} text-xs ${
@@ -166,7 +177,8 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
     );
   }
 
-  /** A plain (non-sorting) header, resizable like the rest. */
+  /** A plain (non-sorting) header, resizable like the rest. The Actions
+      header shows its word above the row's ⋮ dots. */
   function header(col: string, label: string, className = "") {
     const wide = colWidths[col];
     return (
@@ -219,10 +231,22 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
           {sortable("amount", "Amount")}
           {sortable("customer", "Customer")}
           {header("item", "Collateral Item")}
-          {sortable("rate", "Rate")}
+          {/* Released tab: the earned interest instead of the rate — what
+              the collateral actually brought back before release day.
+              Active / All: the Rate column STAYS and an Interest column
+              joins it (outstanding accrued on active, frozen on released
+              rows — one live figure per collateral). */}
+          {statusTab === "Released"
+            ? sortable("earned", "Interest Earned")
+            : (
+              <>
+                {sortable("rate", "Rate")}
+                {sortable("interest", "Interest")}
+              </>
+            )}
           {sortable("status", "Status")}
           {showReleased && header("released", "Released")}
-          {actions && header("actions", "")}
+          {actions && header("actions", "Actions")}
         </tr>
       </thead>
       <tbody className="stagger divide-y divide-line">
@@ -238,7 +262,10 @@ export default function EntryGroupTable({ groups, actions, loading = false, show
             onToggle={() => toggle(g.groupId)}
             actions={actions}
             showReleased={showReleased}
+            showInterestEarned={statusTab === "Released"}
+            showInterest={statusTab !== "Released"}
             onEditEntry={onEditEntry}
+            onDeleteEntry={onDeleteEntry}
             flash={flash}
           />
         ))}

@@ -18,7 +18,7 @@ import {
   mockAddManualCash, mockDeleteCashEntry, mockFetchUsers, mockAddUser,
   mockUpdateUser, mockGlobalSearch, mockReportSummary, mockReportCustomers,
   mockReportReleases, mockFetchActivity, mockImportPreview, mockImportCommit,
-  mockFetchOutsourced, mockOutsourceGroup, mockOutsourceReturn,
+  mockFetchOutsourced, mockOutsourceGroup, mockOutsourceReturn, mockDeleteEntry, mockDeleteGroup,
 } from "./mockApi.ts";
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
@@ -98,9 +98,9 @@ async function http<T>(path: string, { method = "GET", body }: { method?: string
 }
 
 /** In-flight dedupe for GETs: two components asking for the same list at
-    the same moment (the Dashboard's refresh and the header Bell) share
-    ONE request, so a page load never fires the same query twice. Only
-    while in flight — every later call re-fetches, so saves stay fresh. */
+    the same moment (page refresh + any other consumer) share ONE request,
+    so a page load never fires the same query twice. Only while in flight —
+    every later call re-fetches, so saves stay fresh. */
 const inflightGets = new Map<string, Promise<unknown>>();
 function httpGet<T>(path: string): Promise<T> {
   const existing = inflightGets.get(path);
@@ -123,7 +123,9 @@ interface DataLayer {
 
   fetchEntries(): Promise<Entry[]>;
   fetchPartials(): Promise<Payment[]>;
-  fetchInsights(tab?: string): Promise<Insights>;
+  /** tab shapes the tiles; from/to (the month/year window) slices every
+      tile by the LEND date. */
+  fetchInsights(tab?: string, from?: string, to?: string): Promise<Insights>;
 
   // The header's global search — one endpoint fanning out across customers,
   // users and transactions. The server drops anything under 3 characters.
@@ -156,6 +158,11 @@ interface DataLayer {
     dateReturned: string; interestCollected: number | null | "";
     totalCollected: number; notes?: string;
   }): Promise<void>;
+
+  // Deletion (§4.9): archive + remove, Writer-only. An entry deletes by
+  // itself; a group deletes its every active lend.
+  deleteEntry(entryId: number, reason?: string): Promise<void>;
+  deleteGroup(groupId: number, reason?: string): Promise<void>;
 
   fetchUsers(): Promise<UserItem[]>;
   addUser(values: { name: string; email: string; password: string; role: Role }): Promise<UserItem>;
@@ -217,9 +224,16 @@ const api: DataLayer = {
 
   fetchPartials: () => httpGet<Payment[]>("/api/payments"),
 
-  /** ?tab=all (default) | active | released — the tab shapes the tiles. */
-  fetchInsights: (tab) =>
-    httpGet<Insights>(`/api/insights${tab && tab !== "All" ? `?tab=${tab.toLowerCase()}` : ""}`),
+  /** ?tab=all (default) | active | released — the tab shapes the tiles;
+      from/to (the month/year window) slices them by the LEND date. */
+  fetchInsights: (tab, from, to) => {
+    const p = new URLSearchParams();
+    if (tab && tab !== "All") p.set("tab", tab.toLowerCase());
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    const qs = p.toString();
+    return httpGet<Insights>(`/api/insights${qs ? `?${qs}` : ""}`);
+  },
 
   fetchGlobalSearch: (q) => httpGet<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`),
 
@@ -326,6 +340,16 @@ const api: DataLayer = {
     http<void>(`/api/groups/${groupId}/outsource/return`, {
       method: "POST", body: { dateReturned },
     }),
+
+  deleteEntry: (entryId, reason) =>
+    http<void>(`/api/entries/${entryId}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, {
+      method: "DELETE",
+    }),
+
+  deleteGroup: (groupId, reason) =>
+    http<void>(`/api/groups/${groupId}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, {
+      method: "DELETE",
+    }),
 };
 
 /** Query string for the windows (reports calendar, cash-ledger window) —
@@ -400,6 +424,8 @@ const mock: DataLayer = {
   fetchOutsourced: mockFetchOutsourced,
   outsourceGroup: mockOutsourceGroup,
   outsourceReturn: mockOutsourceReturn,
+  deleteEntry: mockDeleteEntry,
+  deleteGroup: mockDeleteGroup,
 };
 
 const impl: DataLayer = USE_MOCK ? mock : api;
@@ -412,7 +438,8 @@ export const updateCustomer = (id: number, patch: Partial<Customer>) => impl.upd
 export const ensureCustomer = (name: string, address: string) => impl.ensureCustomer(name, address);
 export const fetchEntries = () => impl.fetchEntries();
 export const fetchPartials = () => impl.fetchPartials();
-export const fetchInsights = (tab?: string) => impl.fetchInsights(tab);
+export const fetchInsights = (tab?: string, from?: string, to?: string) =>
+  impl.fetchInsights(tab, from, to);
 export const fetchGlobalSearch = (q: string) => impl.fetchGlobalSearch(q);
 export const fetchCashLedger = (from?: string, to?: string) => impl.fetchCashLedger(from, to);
 export const fetchCashTotal = () => impl.fetchCashTotal();
@@ -452,3 +479,7 @@ export const outsourceGroup = (groupId: number, values: { date: string; to: stri
   impl.outsourceGroup(groupId, values);
 export const outsourceReturn = (groupId: number, dateReturned: string) =>
   impl.outsourceReturn(groupId, dateReturned);
+
+// Deletion (§4.9) — archive + remove, Writer-only.
+export const deleteEntry = (entryId: number, reason?: string) => impl.deleteEntry(entryId, reason);
+export const deleteGroup = (groupId: number, reason?: string) => impl.deleteGroup(groupId, reason);

@@ -92,6 +92,7 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
 
   // Every money row of the sheet, flattened in sheet order — a +row is a
   // lend, a −row the inline partial return under the same collateral.
+  // A RELEASED sheet adds the release day + the earned interest.
   interface Movement {
     row: number;
     name: string;
@@ -100,7 +101,10 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
     amount: string; // formatted, sign included
     isReturn: boolean;
     note: string | null;
+    released: string | null;
+    earned: string | null;
   }
+  const released = preview?.kind === "Released";
   const movements: Movement[] = (preview?.groups ?? [])
     .flatMap((g) => [
       ...g.lends.map((l) => ({ row: l.row, name: g.name, item: g.item, lend: l, ret: null })),
@@ -109,8 +113,14 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
     .sort((a, b) => a.row - b.row)
     .map(({ row, name, item, lend, ret }) =>
       lend
-        ? { row, name, item, date: lend.date, amount: money(lend.amount), isReturn: false, note: null }
-        : { row, name, item, date: ret!.date, amount: money(ret!.amount), isReturn: true, note: ret!.notes }
+        ? {
+            row, name, item, date: lend.date, amount: money(lend.amount), isReturn: false, note: null,
+            released: lend.releasedDate, earned: lend.interest != null ? money(lend.interest) : null,
+          }
+        : {
+            row, name, item, date: ret!.date, amount: money(ret!.amount), isReturn: true, note: ret!.notes,
+            released: null, earned: null,
+          }
     );
 
   return (
@@ -180,6 +190,8 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
                     <th className="px-3 py-2 font-medium">Item</th>
                     <th className="px-3 py-2 font-medium">Date</th>
                     <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    {released && <th className="px-3 py-2 font-medium">Released</th>}
+                    {released && <th className="px-3 py-2 text-right font-medium">Earned</th>}
                     <th className="px-3 py-2 font-medium">Note</th>
                   </tr>
                 </thead>
@@ -198,6 +210,8 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
                         {m.isReturn ? "−" : "+"}
                         {m.amount}
                       </td>
+                      {released && <td className="whitespace-nowrap px-3 py-2 text-muted">{shortDate(m.released)}</td>}
+                      {released && <td className="whitespace-nowrap px-3 py-2 text-right text-slate">{m.earned ?? "—"}</td>}
                       <td className="max-w-48 truncate px-3 py-2 text-muted">{m.note || <span className="text-muted/50">—</span>}</td>
                     </tr>
                   ))}
@@ -213,7 +227,7 @@ export default function ImportDialog({ open, onClose, onSaved }: Props) {
                 className={primaryBtnCls}
               >
                 <i className={`ph ph-upload-bold text-base ${committing ? "animate-pulse" : ""}`} aria-hidden="true" />
-                {committing ? "Importing…" : `Import ${lends} lends`}
+                {committing ? "Importing…" : released ? `Import ${preview.groups.length} released collaterals` : `Import ${lends} lends`}
               </button>
             </div>
           </>

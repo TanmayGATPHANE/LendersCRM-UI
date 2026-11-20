@@ -1,26 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { fetchActivity, fetchUsers } from "../api/client.ts";
 import type { ActivityItem, UserItem } from "../api/types.ts";
-import DateRangePicker, { fmtISO } from "../components/DateRangePicker.tsx";
-import useDateRange from "../utils/useDateRange.ts";
+import MonthYearFilter from "../components/MonthYearFilter.tsx";
+import { fmtISO, windowFrom } from "../utils/format.ts";
 import { LoadMore, useChunkedRows } from "../components/LoadMore.tsx";
 import { selectCls } from "../components/ui.ts";
 import { istWhen } from "../utils/format.ts";
 import { SkeletonRows } from "../components/Skeleton.tsx";
 
 /**
- * Activity — the audit trail (§10), Admin only: every add, edit, partial
+ * Activity â€” the audit trail (Â§10), Admin only: every add, edit, partial
  * return, release, cash movement and account change the system has
  * recorded, newest first. Each row says WHO did it (the name was
  * snapshotted at write time), WHEN, and a plain sentence about WHAT moved.
  * The dropdown narrows it to one user's trail; the date-range picker
- * narrows it to a slice of time — it opens on ALL TIME (the trail had no
+ * narrows it to a slice of time â€” it opens on ALL TIME (the trail had no
  * window before, so opening it must still show everything), filtered
  * client-side on each row's local date (the same axis the "When" cell
  * renders).
  */
 
-/** Chip color per action verb — red stays reserved for deletions. */
+/** Chip color per action verb â€” red stays reserved for deletions. */
 const ACTION_CLS: Record<string, string> = {
   Created: "bg-tint text-green-700",
   Updated: "bg-tint text-slate",
@@ -28,7 +28,7 @@ const ACTION_CLS: Record<string, string> = {
   Deleted: "bg-tint text-red-600",
 };
 
-/** When a row happened — Indian day + clock time ("02 Nov, 4:10 pm")
+/** When a row happened â€” Indian day + clock time ("02 Nov, 4:10 pm")
     rendered from the UTC stamp (the same helper everywhere). */
 const when = istWhen;
 
@@ -37,11 +37,11 @@ export default function Activity() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [userId, setUserId] = useState<string>("all");
   const [loading, setLoading] = useState(true);
-  // Date-range slice of the trail — the endpoint has no date window, so
-  // it filters client-side (opens on ALL TIME, not a preset window, so a
-  // check of the books sees history right away).
-  const { selected, range, applyCustom } =
-    useDateRange("All time");
+  // Month/year slice of the trail â€” the endpoint has no date window, so
+  // it filters client-side. Defaults: current year, all months, never
+  // persisted (every open starts fresh, like the Dashboard's).
+  const [month, setMonth] = useState("all");
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
 
   // The trail refetches whenever the user filter changes; one admin-only
   // endpoint serves the whole row and the filter is a query param.
@@ -59,18 +59,26 @@ export default function Activity() {
     fetchUsers().then(setUsers).catch(() => { /* the trail itself still shows */ });
   }, []);
 
-  // Same time axis as the rows' own "When" rendering — the row's LOCAL
-  // date inside the confirmed range, inclusive both ends. The user and
-  // range filters stack (both can be active at once).
+  // Same time axis as the rows' own "When" rendering â€” the row's LOCAL
+  // date inside the month/year window, inclusive both ends. The user and
+  // date filters stack (both can be active at once).
   const shown = useMemo(() => {
-    const from = fmtISO(range.start), to = fmtISO(range.end);
+    const { from, to } = windowFrom(month, year);
     return rows.filter((r) => {
       const d = fmtISO(new Date(r.atUtc));
-      return d >= from && d <= to;
+      return (!from || d >= from) && (!to || d <= to);
     });
-  }, [rows, range]);
+  }, [rows, month, year]);
 
-  // Paged rendering — 50 rows at a time (scroll or "Show more"), like the
+  // Years the trail has seen + the current year (the "all" option rides
+  // inside the shared filter).
+  const years = useMemo(() => {
+    const ys = new Set<string>([String(new Date().getFullYear())]);
+    for (const r of rows) ys.add(fmtISO(new Date(r.atUtc)).slice(0, 4));
+    return [...ys].sort().reverse();
+  }, [rows]);
+
+  // Paged rendering â€” 50 rows at a time (scroll or "Show more"), like the
   // other long tables.
   const [visible, more] = useChunkedRows(shown.length);
   const page = useMemo(() => shown.slice(0, visible), [shown, visible]);
@@ -89,16 +97,16 @@ export default function Activity() {
             <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
           ))}
         </select>
-        <DateRangePicker selected={selected} range={range} onApply={applyCustom} />
+        <MonthYearFilter month={month} year={year} years={years} onMonth={setMonth} onYear={setYear} />
         <div className="flex-1" />
         <span className="text-sm text-muted">
-          {loading ? "Loading…"
+          {loading ? "Loadingâ€¦"
             : `${shown.length} ${shown.length === 1 ? "event" : "events"}`
-              + (selected !== "All time" ? " in window" : "")}
+              + (month !== "all" || year !== "all" ? " in window" : "")}
         </span>
       </div>
 
-      {/* The trail — paged like every other long table */}
+      {/* The trail â€” paged like every other long table */}
       <div className="table-scroll flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
         {/* Mobile: one card per event */}
         <div className="stagger space-y-2 p-3 md:hidden">
@@ -118,9 +126,9 @@ export default function Activity() {
           ))}
           {!loading && shown.length === 0 && (
             <p className="py-10 text-center text-sm text-muted">
-              {selected !== "All time"
-                ? "No events in this window — widen the date range."
-                : "Nothing recorded yet — actions land here as the books change."}
+              {month !== "all" || year !== "all"
+                ? "No events in this window â€” widen the date range."
+                : "Nothing recorded yet â€” actions land here as the books change."}
             </p>
           )}
         </div>
@@ -154,9 +162,9 @@ export default function Activity() {
             {!loading && shown.length === 0 && (
               <tr>
                 <td colSpan={4} className="hidden px-3 py-12 text-center text-sm text-muted md:table-cell">
-                  {selected !== "All time"
-                    ? "No events in this window — widen the date range."
-                    : "Nothing recorded yet — actions land here as the books change."}
+                  {month !== "all" || year !== "all"
+                    ? "No events in this window â€” widen the date range."
+                    : "Nothing recorded yet â€” actions land here as the books change."}
                 </td>
               </tr>
             )}
@@ -170,4 +178,5 @@ export default function Activity() {
     </main>
   );
 }
+
 
