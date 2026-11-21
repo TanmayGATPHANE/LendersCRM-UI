@@ -90,22 +90,19 @@ export default function Layout() {
       )}
 
       {/* Sidebar — off-canvas drawer under lg; a 64px icon rail from lg up
-          that expands over the page on hover/focus (an overlay, so the
-          table underneath never reflows while the pointer passes through). */}
+          that expands to 224px on hover/focus. The ASIDE itself animates its
+          width, so the page beside it shrinks/grows with the rail instead of
+          being covered by it. */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 shrink-0 bg-card shadow-lg
                     transition-transform duration-300 ease-brand motion-reduce:transition-none
-                    lg:relative lg:z-auto lg:w-16 lg:bg-transparent lg:shadow-none
+                    lg:relative lg:z-auto lg:w-16 lg:hover:w-56 lg:has-[:focus-visible]:w-56
+                    lg:shadow-[0_1px_8px_rgba(0,0,0,0.06)]
+                    lg:transition-[width] lg:duration-300 lg:ease-brand
                     ${navOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
-        {/* The rail: 64px collapsed, 224px while hovered or holding focus. */}
-        <div
-          className="group/nav flex h-full w-full flex-col justify-between bg-card
-                     lg:absolute lg:inset-y-0 lg:left-0 lg:z-50 lg:w-16 lg:overflow-hidden
-                     lg:shadow-[0_1px_8px_rgba(0,0,0,0.06)]
-                     lg:transition-[width] lg:duration-300 lg:ease-brand
-                     lg:hover:w-56 lg:has-[:focus-visible]:w-56 motion-reduce:transition-none"
-        >
+        {/* The rail's content; clipped while the width animates. */}
+        <div className="group/nav flex h-full w-full flex-col justify-between overflow-hidden bg-card">
         <div>
           <div className="flex h-12 items-center gap-2.5 px-4 border-b border-line">
             {/* Logo tile — the app's mark, reused in favicon.svg */}
