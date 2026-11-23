@@ -9,7 +9,8 @@ import Activity from "./pages/Activity.tsx";
 import Cash from "./pages/Cash.tsx";
 import Reports from "./pages/Reports.tsx";
 import Outsourced from "./pages/Outsourced.tsx";
-import { currentUser } from "./api/client.ts";
+import ImportPage from "./pages/Import.tsx";
+import { canEdit, currentUser } from "./api/client.ts";
 import type { Role } from "./api/types.ts";
 
 /**
@@ -39,6 +40,14 @@ function RequireRole({ role, children }: Props) {
   return children;
 }
 
+/** Guards a Writer-only route (Import, §4.7): ViewOnly accounts browse
+    everything but never write, and the import endpoints require the
+    same Writer policy the sidebar link reflects. */
+function RequireWriter({ children }: { children: ReactNode }) {
+  if (!canEdit()) return <Navigate to="/" replace />;
+  return children;
+}
+
 /** Route table — one component per page, shared shell in Layout. */
 export default function App() {
   return (
@@ -57,6 +66,14 @@ export default function App() {
           <Route path="/cash" element={<Cash />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/outsourced" element={<Outsourced />} />
+          <Route
+            path="/import"
+            element={
+              <RequireWriter>
+                <ImportPage />
+              </RequireWriter>
+            }
+          />
           <Route
             path="/users"
             element={

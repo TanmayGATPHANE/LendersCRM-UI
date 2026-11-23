@@ -149,6 +149,10 @@ export interface ReleaseReportRow {
 
 // ---- Excel import (§4.7) — shapes mirror the backend Contracts.cs ----
 
+/** Which book an import reads — the Import page's two separate options.
+    "Active" = the open lending book; "Released" = the already-returned one. */
+export type ImportKind = "Active" | "Released";
+
 /** One money row of a parsed sheet: a lend (amount > 0) or an inline
     partial return (written negative in the sheet, positive here). Rows
     from a RELEASED sheet also carry the release day + earned interest. */
@@ -175,14 +179,14 @@ export interface ImportPreviewGroup {
   totalCollected: number | null;
 }
 
-/** The whole parsed workbook, as the import dialog's review table reads it.
+/** The whole parsed workbook, as the Import page's review table reads it.
     kind = which sheet the rows came from: "Active" (the open book) or
     "Released" (the already-returned book). */
 export interface ImportPreview {
   fileName: string;
   sheets: string[];
   sheetUsed: string;
-  kind: string;
+  kind: ImportKind;
   groups: ImportPreviewGroup[];
   warnings: string[];
 }

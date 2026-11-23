@@ -42,6 +42,11 @@ export default function Login() {
     }
   }
 
+  // An empty base means same-origin — the SPA calls /api/... on whatever
+  // host serves it (nginx proxies that to the API). Show the URL the
+  // browser will actually hit, or the badge renders as an empty pill.
+  const apiLabel = API_MODE.base || `${window.location.origin}/api`;
+
   return (
     <main className="flex min-h-screen bg-surface">
       {/* Brand panel — the product story (desktop only) */}
@@ -215,7 +220,7 @@ export default function Login() {
               }`}
               title={API_MODE.mock
                 ? "This build shows sample data (VITE_USE_MOCK=1 was set at build time)"
-                : `This build calls the real API at ${API_MODE.base}`}
+                : `This build calls the real API at ${apiLabel}`}
             >
               <i
                 className={`ph ${API_MODE.mock ? "ph-flask" : "ph-broadcast"} text-sm shrink-0`}
@@ -223,7 +228,7 @@ export default function Login() {
               />
               {API_MODE.mock
                 ? "Demo data (mock mode)"
-                : <span className="block truncate">{API_MODE.base}</span>}
+                : <span className="block truncate">{apiLabel}</span>}
             </span>
           </p>
 

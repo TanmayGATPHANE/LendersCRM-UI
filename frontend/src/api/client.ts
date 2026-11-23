@@ -24,7 +24,7 @@ import {
 import type {
   AppUser, CashLedgerItem, Customer, Entry, Insights, Payment, Role, UserItem,
   SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, ActivityItem,
-  ImportPreview, ImportResult, OutsourcedRow, GroupsPage, GroupsPageQuery, GroupItem,
+  ImportKind, ImportPreview, ImportResult, OutsourcedRow, GroupsPage, GroupsPageQuery, GroupItem,
   CustomerHistory,
 } from "./types.ts";
 
@@ -191,10 +191,11 @@ interface DataLayer {
   fetchActivity(userId?: number, groupId?: number): Promise<ActivityItem[]>;
 
   // The Excel lending-book import (§4.7): parse the workbook for the
-  // dialog's review table, then commit it. `rate` is the %/month that
-  // every imported lend gets (the counter types it; default 2).
-  importPreview(file: File, rate: number): Promise<ImportPreview>;
-  importCommit(file: File, rate: number): Promise<ImportResult>;
+  // Import page's full review table, then commit it. `kind` is the book
+  // the user picked — Active or Released, two separate imports. `rate` is
+  // the %/month that every imported lend gets (the page types it; default 2).
+  importPreview(file: File, rate: number, kind: ImportKind): Promise<ImportPreview>;
+  importCommit(file: File, rate: number, kind: ImportKind): Promise<ImportResult>;
 
   // Outsourcing (§4.8): the collaterals sitting with an outside party —
   // handed out on a date with a name and note; while out the group shows
@@ -353,9 +354,9 @@ const api: DataLayer = {
     return httpGet<ActivityItem[]>(`/api/activity${qs ? `?${qs}` : ""}`);
   },
 
-  importPreview: (file, rate) => upload<ImportPreview>("/api/import/preview", file, rate, "POST"),
+  importPreview: (file, rate, kind) => upload<ImportPreview>("/api/import/preview", file, rate, kind, "POST"),
 
-  importCommit: (file, rate) => upload<ImportResult>("/api/import/commit", file, rate, "POST"),
+  importCommit: (file, rate, kind) => upload<ImportResult>("/api/import/commit", file, rate, kind, "POST"),
 
   fetchOutsourced: () => httpGet<OutsourcedRow[]>("/api/outsourced"),
 
@@ -390,12 +391,16 @@ function reportWindowQuery(from?: string, to?: string): string {
 }
 
 /** Multipart upload (the Excel import): the file in a `file` part, the
-    interest rate on the query string. Same JWT/error handling as http(). */
-async function upload<T>(path: string, file: File, rate: number, method: "POST"): Promise<T> {
+    interest rate and the book kind (Active | Released) on the query
+    string. Same JWT/error handling as http(). */
+async function upload<T>(
+  path: string, file: File, rate: number, kind: ImportKind, method: "POST"
+): Promise<T> {
   const token = currentUser()?.token;
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}${path}?rate=${encodeURIComponent(String(rate))}`, {
+  const query = `rate=${encodeURIComponent(String(rate))}&kind=${encodeURIComponent(kind)}`;
+  const res = await fetch(`${BASE}${path}?${query}`, {
     method,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
@@ -450,7 +455,7 @@ const mock: DataLayer = {
   fetchReportCustomers: mockReportCustomers,
   fetchReportReleases: mockReportReleases,
   fetchActivity: mockFetchActivity,
-  importPreview: (file) => mockImportPreview(file),
+  importPreview: (file, rate, kind) => mockImportPreview(file, rate, kind),
   importCommit: () => mockImportCommit(),
   fetchOutsourced: mockFetchOutsourced,
   outsourceGroup: mockOutsourceGroup,
@@ -503,9 +508,12 @@ export const fetchReportSummary = (from?: string, to?: string) => impl.fetchRepo
 export const fetchReportCustomers = (from?: string, to?: string) => impl.fetchReportCustomers(from, to);
 export const fetchReportReleases = (from?: string, to?: string) => impl.fetchReportReleases(from, to);
 
-// Excel lending-book import (§4.7) — parse for the review table, commit for real.
-export const importPreview = (file: File, rate: number) => impl.importPreview(file, rate);
-export const importCommit = (file: File, rate: number) => impl.importCommit(file, rate);
+// Excel lending-book import (§4.7) — parse for the review table, commit for
+// real. `kind` picks which book the file's sheet is read as.
+export const importPreview = (file: File, rate: number, kind: ImportKind) =>
+  impl.importPreview(file, rate, kind);
+export const importCommit = (file: File, rate: number, kind: ImportKind) =>
+  impl.importCommit(file, rate, kind);
 
 // Outsourcing (§4.8) — the only view where outsourced collaterals show.
 export const fetchOutsourced = () => impl.fetchOutsourced();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { currentUser, setUser } from "../api/client.ts";
+import { canEdit, currentUser, setUser } from "../api/client.ts";
 import { ghostIconBtnCls } from "./ui.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
 import UserMenu from "./UserMenu.tsx";
@@ -13,6 +13,7 @@ const TITLES: Record<string, string> = {
   "/cash": "Cash",
   "/reports": "Reports",
   "/outsourced": "Outsourced",
+  "/import": "Import",
   "/users": "Users",
   "/activity": "Activity",
 };
@@ -145,6 +146,13 @@ export default function Layout() {
               <i className={`${iconCls} ph-package`} aria-hidden="true" />
               <span className={labelCls}>Outsourced</span>
             </NavLink>
+            {/* Excel import — its own page (§4.7), Writer-only like the API. */}
+            {canEdit() && (
+              <NavLink to="/import" className={linkClass} title="Import from Excel">
+                <i className={`${iconCls} ph-microsoft-excel-logo`} aria-hidden="true" />
+                <span className={labelCls}>Import</span>
+              </NavLink>
+            )}
             {/* Admin-only pages */}
             {user?.role === "Admin" && (
               <NavLink to="/activity" className={linkClass} title="Activity">

@@ -5,7 +5,7 @@
 // the switch really is a switch and the compiler keeps them in step.
 
 import { cashLedger, customers, entries, partials, takeCustomerId, takeEntryId, takeLedgerId, takePartialId, takeUserId } from "./mockData.ts";
-import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportPreview, ImportResult, OutsourcedRow, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem, GroupsPage, GroupsPageQuery, GroupItem, CollateralGroup, CustomerHistory } from "./types.ts";
+import type { AppUser, ActivityItem, CashLedgerItem, Customer, Entry, Insights, ImportKind, ImportPreview, ImportResult, OutsourcedRow, Payment, SearchHit, SearchResults, SummaryRow, CustomerReportRow, ReleaseReportRow, UserItem, GroupsPage, GroupsPageQuery, GroupItem, CollateralGroup, CustomerHistory } from "./types.ts";
 import { accruedInterest } from "../utils/interest.ts";
 import { allocatePaid } from "../utils/repayment.ts";
 import { buildGroups } from "../utils/grouping.ts";
@@ -754,13 +754,16 @@ export function mockFetchActivity(userId?: number, groupId?: number): Promise<Ac
 }
 
 /** Excel import (§4.7) — demo mode has no server to parse with, so the
-    preview comes back empty with a line saying so; the commit refuses. */
-export async function mockImportPreview(file: File): Promise<ImportPreview> {
+    preview comes back empty with a line saying so; the commit refuses.
+    `kind` is echoed back so the page still shows which book was asked for. */
+export async function mockImportPreview(
+  file: File, _rate = 2, kind: ImportKind = "Active"
+): Promise<ImportPreview> {
   return Promise.resolve({
     fileName: file.name,
     sheets: [],
     sheetUsed: "—",
-    kind: "Active",
+    kind,
     groups: [],
     warnings: ["Excel import needs the real API — demo mode has no server to parse with."],
   });

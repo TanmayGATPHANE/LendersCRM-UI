@@ -1,0 +1,14 @@
+# Build-context hygiene for `docker build .` from the UI repo root.
+# Only frontend/ sources are copied into the image.
+.git
+frontend/node_modules
+frontend/dist
+frontend/.vercel
+frontend/*.tsbuildinfo
+
+# The image is configured through build args (see Dockerfile). The committed
+# env files belong to the Vercel/static build; keeping them out of the image
+# context guarantees a same-origin compose build and keeps .env.local (which
+# holds a Vercel OIDC token) out of every layer.
+frontend/.env
+frontend/.env.*

@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import AddEntryDialog from "../components/dialogs/AddEntryDialog.tsx";
 import ReleaseEntryDialog from "../components/dialogs/ReleaseEntryDialog.tsx";
 import PartialReturnDialog from "../components/dialogs/PartialReturnDialog.tsx";
-import ImportDialog from "../components/dialogs/ImportDialog.tsx";
 import OutsourceDialog from "../components/dialogs/OutsourceDialog.tsx";
 import ConfirmDialog from "../components/ConfirmDialog.tsx";
 import { money, shortDate } from "../utils/format.ts";
@@ -12,7 +11,7 @@ import GridTable from "../components/table/GridTable.tsx";
 import { LoadMore, PAGE_SIZE } from "../components/LoadMore.tsx";
 import type { FlashHint } from "../components/table/FlashTr.tsx";
 import InsightsBar from "../components/InsightsBar.tsx";
-import { primaryBtnCls, secondaryBtnCls, iconBtnCls, inputCls } from "../components/ui.ts";
+import { primaryBtnCls, iconBtnCls, inputCls } from "../components/ui.ts";
 import { fetchCustomers, fetchGroupsPage, fetchGroup, fetchInsights, updateEntry, updatePartial, updateGroupCustomer, deleteEntry, deleteGroup, canEdit } from "../api/client.ts";
 import type { CollateralGroup, Customer, Entry, EntryStatus, Insights, SavedWhere } from "../api/types.ts";
 import { toast } from "../components/Toast.tsx";
@@ -76,7 +75,6 @@ export default function Dashboard() {
   const [deletingGroup, setDeletingGroup] = useState<CollateralGroup | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [showImport, setShowImport] = useState(false); // Excel lending-book import (§4.7)
 
   // The customer directory rides along once on mount — the Add Entry
   // suggestions need everyone on file (the rows themselves page in).
@@ -468,16 +466,10 @@ export default function Dashboard() {
             />
           </button>
           {canEdit() && (
-            <>
-              <button onClick={() => setShowImport(true)} className={secondaryBtnCls} title="Import a yearly Excel lending book">
-                <i className="ph ph-microsoft-excel-logo text-lg" aria-hidden="true" />
-                Import
-              </button>
-              <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
-                <i className="ph ph-plus text-lg" aria-hidden="true" />
-                Add Entry
-              </button>
-            </>
+            <button onClick={() => setShowAdd(true)} className={primaryBtnCls}>
+              <i className="ph ph-plus text-lg" aria-hidden="true" />
+              Add Entry
+            </button>
           )}
         </div>
       </div>
@@ -541,11 +533,6 @@ export default function Dashboard() {
         group={partlyReturning}
         onClose={() => setPartlyReturning(null)}
         onSaved={onSaved}
-      />
-      <ImportDialog
-        open={showImport}
-        onClose={() => setShowImport(false)}
-        onSaved={() => refresh()}
       />
       <OutsourceDialog
         open={Boolean(outsourcing)}
