@@ -125,26 +125,26 @@ export default function ImportPreviewTable({ preview, rate }: Props) {
   const cellR = `${cell} text-right`;
 
   return (
-    <table className="w-full table-fixed min-w-[1040px] text-sm">
+    <table className="w-full table-fixed min-w-[1120px] text-sm">
       <thead className="sticky top-0 z-10 bg-card border-b border-line">
         <tr>
-          <th className={`${th} w-[4%]`}>Row</th>
-          <th className={`${th} w-[8%]`}>Date</th>
+          <th className={`${th} w-[7%]`}>Row</th>
+          <th className={`${th} w-[9%]`}>Date</th>
           <th className={`${th} w-[6%]`}>Type</th>
           <th className={`${th} w-[12%]`}>Customer</th>
-          <th className={`${th} w-[14%]`}>Item</th>
+          <th className={`${th} w-[13%]`}>Item</th>
           <th className={`${thR} w-[8%]`}>Lend</th>
           {!released && <th className={`${thR} w-[8%]`}>Received</th>}
           <th className={`${thR} w-[7%]`}>Rate</th>
           {released && <th className={`${thR} w-[7%]`}>Earned</th>}
           <th className={`${th} w-[8%]`}>Status</th>
           {released && <th className={`${th} w-[9%]`}>Released</th>}
-          <th className={`${th} w-[10%]`}>Notes</th>
+          <th className={`${th} w-[8%]`}>Notes</th>
         </tr>
         {/* Per-column filters, exactly where the Dashboard grid puts them. */}
         <tr>
           {COLS.map((col) => (
-            <th key={col} className="px-2 pb-1.5 font-normal">
+            <th key={col} className="px-3 pb-1.5 font-normal">
               <input
                 value={colFilters[col] ?? ""}
                 onChange={(e) => setColFilters({ ...colFilters, [col]: e.target.value })}

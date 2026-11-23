@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ImportPreviewTable from "../components/import/ImportPreviewTable.tsx";
+import WorkbookPicker from "../components/import/WorkbookPicker.tsx";
 import { toast } from "../components/Toast.tsx";
-import { inputCls, labelCls, primaryBtnCls, secondaryBtnCls } from "../components/ui.ts";
+import { inputCls, primaryBtnCls, secondaryBtnCls } from "../components/ui.ts";
 import { importCommit, importPreview } from "../api/client.ts";
 import type { ImportKind, ImportPreview, ImportResult } from "../api/types.ts";
 import { money } from "../utils/format.ts";
@@ -26,21 +27,9 @@ import { money } from "../utils/format.ts";
  */
 
 /** The two books — each its own import run. */
-const MODES: Array<{ kind: ImportKind; title: string; blurb: string; icon: string }> = [
-  {
-    kind: "Active",
-    title: "Import active book",
-    blurb:
-      "The open lending book. Merged Name + Item cells stay one collateral (their rows become sub-lends); a negative amount is a partial return.",
-    icon: "ph-book-open",
-  },
-  {
-    kind: "Released",
-    title: "Import released book",
-    blurb:
-      "Collaterals already returned. Each lands as Released, with the day it came back and the interest the release brought in.",
-    icon: "ph-archive-box",
-  },
+const MODES: Array<{ kind: ImportKind; title: string; icon: string }> = [
+  { kind: "Active", title: "Import active book", icon: "ph-book-open" },
+  { kind: "Released", title: "Import released book", icon: "ph-archive-box" },
 ];
 
 export default function ImportPage() {
@@ -53,7 +42,6 @@ export default function ImportPage() {
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   // A sequence per parse: switching book (or file) while the previous
   // parse is in flight must never let the older answer win.
   const parseSeq = useRef(0);
@@ -79,15 +67,27 @@ export default function ImportPage() {
 
   /** A picked file parses immediately; clearing it clears the preview. */
   function pick(f: File | null): void {
-    setFile(f);
     setResult(null);
     if (!f) {
       parseSeq.current++;
+      setFile(null);
       setReading(false);
       setPreview(null);
       setError("");
       return;
     }
+    // Drop targets can hand over anything — only an .xlsx is a workbook
+    // here. Refuse it loudly instead of uploading bytes the API answers
+    // with a generic 400.
+    if (!/\.xlsx$/i.test(f.name)) {
+      parseSeq.current++;
+      setFile(null);
+      setReading(false);
+      setPreview(null);
+      setError("That is not an .xlsx workbook — pick the sheet saved from Excel.");
+      return;
+    }
+    setFile(f);
     void parse(f, kind);
   }
 
@@ -110,7 +110,6 @@ export default function ImportPage() {
     setResult(null);
     setError("");
     setReading(false);
-    if (fileInput.current) fileInput.current.value = "";
   }
 
   async function commit(): Promise<void> {
@@ -131,7 +130,6 @@ export default function ImportPage() {
       setResult(r);
       setPreview(null);
       setFile(null);
-      if (fileInput.current) fileInput.current.value = "";
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -150,80 +148,74 @@ export default function ImportPage() {
   const rateOk = Number.isFinite(rateNum) && rateNum >= 0 && rateNum < 100;
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-      {/* Step 1 — which book, then which file. Everything here is shrink-0;
-          the parsed grid below owns the page's only scroll region. */}
+    // Below lg the one-row toolbar wraps, so the page scrolls and the grid
+    // keeps a usable floor instead of collapsing to a sliver. From lg up
+    // the toolbar stays on one row and the grid owns the scroll.
+    <main className="flex flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-6 sm:py-4 lg:overflow-hidden">
+      {/* One toolbar: book switch · workbook · rate. The parsed grid below
+          owns the page's only scroll region. */}
       <div className="shrink-0 space-y-2 pb-2">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <h1 className="text-lg font-semibold tracking-tight text-ink">Import from Excel</h1>
-          <p className="text-sm text-muted">
-            One book per run — the whole sheet is shown below before anything is written.
-          </p>
-        </div>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">Import from Excel</h1>
 
-        {/* The two options — deliberately separate runs, each with its own
-            sheet on the server side (no silent fallback to the other book). */}
-        <div className="grid gap-2 sm:grid-cols-2">
-          {MODES.map((m) => {
-            const on = kind === m.kind;
-            return (
-              <button
-                key={m.kind}
-                type="button"
-                aria-pressed={on}
-                onClick={() => chooseKind(m.kind)}
-                disabled={committing}
-                className={`flex items-start gap-3 rounded-xl border p-3 text-left transition duration-300 ease-brand
-                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                  on
-                    ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                    : "border-line bg-card hover:bg-tint-hover"
-                }`}
-              >
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
-                  on ? "bg-primary text-on-primary" : "bg-tint text-slate"
-                }`}>
-                  <i className={`ph ${m.icon} text-lg`} aria-hidden="true" />
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                    {m.title}
-                    {on && <i className="ph ph-check-circle text-base text-primary" aria-hidden="true" />}
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-muted">{m.blurb}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The two books — deliberately separate runs, each with its own
+              sheet on the server side (no silent fallback to the other). */}
+          <div
+            role="group"
+            aria-label="Which book"
+            className="flex w-full rounded-lg border border-line bg-tint p-1 sm:w-auto"
+          >
+            {MODES.map((m) => {
+              const on = kind === m.kind;
+              // A picked workbook belongs to one book — lock the other side
+              // so a stray click cannot re-parse it as the wrong sheet.
+              const locked = file !== null && !on;
+              return (
+                <button
+                  key={m.kind}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => chooseKind(m.kind)}
+                  disabled={committing || locked}
+                  title={locked ? "Clear the workbook to switch books" : undefined}
+                  className={`inline-flex h-7 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-sm
+                              transition-colors duration-300 ease-brand
+                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+                              disabled:cursor-not-allowed disabled:opacity-40 ${
+                    on
+                      ? "bg-primary font-semibold text-on-primary shadow-sm"
+                      : "text-slate hover:bg-tint-hover hover:text-ink"
+                  }`}
+                >
+                  <i className={`ph ${m.icon} text-base`} aria-hidden="true" />
+                  {m.title}
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="grid items-end gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <label className={labelCls}>
-            {released ? "Released book (.xlsx)" : "Active book (.xlsx)"}
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".xlsx"
-              onChange={(e) => pick(e.target.files?.[0] ?? null)}
-              className={`${inputCls} mt-1 file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-sm file:font-semibold file:text-on-primary`}
+          <div className="min-w-0 flex-1 basis-64">
+            <WorkbookPicker
+              file={file}
+              disabled={committing}
+              label={`Choose the ${released ? "released" : "active"} book workbook`}
+              onPick={pick}
             />
-          </label>
-          <label className={labelCls}>
-            Interest rate (%/month)
+          </div>
+
+          <label className="flex shrink-0 items-center gap-2">
+            <span className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-slate">
+              Rate %/mo
+            </span>
             <input
               type="number" min="0" max="99" step="0.01" value={rate}
               onChange={(e) => setRate(e.target.value)}
-              className={`${inputCls} mt-1`}
+              aria-label="Interest rate, percent per month"
+              className={`${inputCls} w-24`}
             />
           </label>
         </div>
-        <p className="text-xs text-muted">
-          One rate for every imported lend (the template's column is 2 %/month). Rows are stamped
-          file/sheet/row, so re-imports skip what is already on the books — imports never touch the
-          cash ledger.
-        </p>
 
-        {reading && <p className="text-sm text-slate">Reading the sheet…</p>}
         {error && (
           <p className="rounded-lg border border-red-300/50 bg-red-50 p-2.5 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">
             {error}
@@ -251,34 +243,21 @@ export default function ImportPage() {
 
         {preview && (
           <>
-            {/* One compact strip — the grid below owns the page. */}
+            {/* The workbook is already named in the picker above — this
+                strip reports what the parse found. */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-tint px-3 py-2 text-xs text-slate">
-              <span className="min-w-0 max-w-full truncate" title={preview.fileName}>
-                <span className="text-muted">File</span>{" "}
-                <span className="font-medium text-ink">{preview.fileName}</span>
-              </span>
-              <span>
-                <span className="text-muted">Sheet</span>{" "}
-                <span className="font-medium text-ink">{preview.sheetUsed}</span>
-              </span>
-              <span>
-                <span className="text-muted">Collaterals</span>{" "}
-                <span className="font-medium text-ink">{preview.groups.length}</span>
-              </span>
-              <span>
-                <span className="text-muted">Lends</span>{" "}
-                <span className="font-medium text-ink">{lends} · {money(lent)}</span>
-              </span>
-              <span>
-                <span className="text-muted">Partial returns</span>{" "}
-                <span className="font-medium text-ink">{rets}</span>
-              </span>
-              {released && (
-                <span>
-                  <span className="text-muted">Interest collected</span>{" "}
-                  <span className="font-medium text-ink">{money(earned)}</span>
+              {[
+                ["Sheet", preview.sheetUsed],
+                ["Collaterals", String(preview.groups.length)],
+                ["Lends", `${lends} · ${money(lent)}`],
+                ...(!released ? [["Partial returns", String(rets)]] : []),
+                ...(released ? [["Interest collected", money(earned)]] : []),
+              ].map(([k, v]) => (
+                <span key={k} className="inline-flex items-baseline gap-1 whitespace-nowrap">
+                  <span className="text-muted">{k}</span>{" "}
+                  <span className="font-medium text-ink">{v}</span>
                 </span>
-              )}
+              ))}
             </div>
 
             {/* Skipped rows: collapsed by default so the preview grid keeps
@@ -301,7 +280,7 @@ export default function ImportPage() {
           checking happens here, writing happens on the button below. */}
       {preview ? (
         <>
-          <div className="table-scroll min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm">
+          <div className="table-scroll min-h-[60svh] flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-line bg-card shadow-sm sm:min-h-[420px] lg:min-h-0">
             <ImportPreviewTable preview={preview} rate={rateOk ? rateNum : null} />
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-3">
@@ -315,7 +294,7 @@ export default function ImportPage() {
               type="button"
               onClick={commit}
               disabled={committing || preview.groups.length === 0}
-              className={primaryBtnCls}
+              className={`${primaryBtnCls} disabled:pointer-events-none disabled:opacity-50`}
             >
               <i className={`ph ph-upload-bold text-base ${committing ? "animate-pulse" : ""}`} aria-hidden="true" />
               {committing
@@ -331,15 +310,12 @@ export default function ImportPage() {
           <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line bg-card/50 px-4 text-center">
             <i className={`ph ${reading ? "ph-spinner animate-spin" : "ph-microsoft-excel-logo"} text-3xl text-dim`} aria-hidden="true" />
             <span className="text-sm text-slate">
-              {reading ? "Reading the sheet…" : "Pick a workbook to see exactly what the import will write."}
+              {reading
+                ? "Reading the sheet…"
+                : file
+                  ? "No preview — see the message above."
+                  : "Pick a workbook to preview."}
             </span>
-            {!reading && (
-              <span className="text-xs text-muted">
-                {released
-                  ? "Released book: Date · Amount · Release date · Interest · Name · Item."
-                  : "Active book: Date · Amount · Interest · Name · Item."}
-              </span>
-            )}
           </div>
         )
       )}
